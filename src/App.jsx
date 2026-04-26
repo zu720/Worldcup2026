@@ -370,8 +370,57 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin }) {
 // Vote Tab
 // ═══════════════════════════════════════════════════════════
 function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, allSorted, gk, glComplete, leftRes, rightRes, leftD, rightD, adv, ctx, score }) {
+  var [showRules, setShowRules] = useState(false);
   return (
     <div className="fade-in">
+      {/* RULES bubble */}
+      <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14, position: "relative" }}>
+        <button
+          onClick={function () { setShowRules(!showRules); }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 20, border: "1px solid " + $.gold + "70", background: showRules ? "rgba(251,191,36,.18)" : "rgba(251,191,36,.08)", color: $.goldL, fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all .15s" }}
+        >
+          📖 ルールを見る {showRules ? "▲" : "▼"}
+        </button>
+        {showRules && (
+          <div className="fade-in" style={{ position: "absolute", top: 44, left: 0, right: 0, zIndex: 10, background: "linear-gradient(135deg,#1f3f6f,#2a5891)", border: "2px solid " + $.gold + "60", borderRadius: 12, padding: 18, boxShadow: "0 12px 40px rgba(0,0,0,.45)" }}>
+            {/* tail */}
+            <div style={{ position: "absolute", top: -10, left: 30, width: 18, height: 18, background: "linear-gradient(135deg,#1f3f6f,#1f3f6f)", border: "2px solid " + $.gold + "60", borderRight: "none", borderBottom: "none", transform: "rotate(45deg)" }} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontFamily: fontH, fontSize: 18, color: $.gold, letterSpacing: 2 }}>📖 遊び方とルール</div>
+              <button onClick={function () { setShowRules(false); }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 5, background: "transparent", border: "1px solid " + $.border, color: $.txt2, cursor: "pointer" }}>閉じる</button>
+            </div>
+            <div style={{ fontSize: 12, color: $.txt, lineHeight: 1.7 }}>
+              <div style={{ marginBottom: 10 }}>
+                <strong style={{ color: $.gold }}>① 遊び方</strong><br />
+                ・各グループの<strong>1位・2位</strong>を予想（必須） — 3位・4位は任意<br />
+                ・<strong>推しベスト3チーム</strong>を48チームから選ぶ（倍率がかかる）<br />
+                ・決勝トーナメントは自分でシミュ可（自分のスコア試算用）<br />
+                ・画面下の「🗳 予想を投票する」で保存。再ログインで編集可
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <strong style={{ color: $.gold }}>② ポイント計算</strong><br />
+                <code style={{ background: "rgba(0,0,0,.3)", padding: "1px 6px", borderRadius: 3 }}>得点 = 基礎点 × ステージ倍率 × 推し倍率</code><br />
+                <span style={{ color: $.txt2 }}>基礎点</span> = オッズ調整値（大穴ほど高い）<br />
+                <span style={{ color: $.txt2 }}>ステージ倍率（累積加算）</span><br />
+                　ベスト32 <strong>x0.2</strong> ／ ベスト16 <strong>x3.0</strong> ／ ベスト8 <strong style={{ color: $.gold }}>x5.0(最高)</strong><br />
+                　準決勝 x2.5 ／ 決勝 x3.0 ／ 優勝 x4.0 ／ 3位 x1.5<br />
+                <span style={{ color: $.txt2 }}>推し倍率</span>: 1推し <strong>x2.5</strong> ／ 2推し x1.8 ／ 3推し x1.3
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <strong style={{ color: $.gold }}>③ 戦略のコツ</strong><br />
+                ・ベスト32は48中32が通過するので的中ハードル低 → 配点低め<br />
+                ・<strong>ベスト8到達予想が一番効く</strong>（x5.0）<br />
+                ・大穴を「推し」に指定して当てるとスコアが跳ねる<br />
+                ・上の「ランダム投票（大穴狙い／バランス／ガチガチ）」で雛形生成も可
+              </div>
+              <div style={{ paddingTop: 8, borderTop: "1px solid " + $.border, color: $.txt2, fontSize: 11 }}>
+                <strong style={{ color: $.pitchL }}>📊 みんなの予想</strong> でリアルタイム順位、 <strong style={{ color: $.pitchL }}>⚽ 大会途中経過</strong> で実際の試合結果が見れます。
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* QUICK VOTE */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
         <span style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 3, color: $.gold, marginRight: 4 }}>🎲 ランダム投票:</span>
