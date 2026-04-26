@@ -94,7 +94,51 @@ var RR32=[{id:81,s:["1G","3(A/E/H/I/J)"]},{id:82,s:["1D","3(B/E/F/I/J)"]},{id:83
 // ═══════════════════════════════════════════════════════════
 function resolveSeed(seed,gl,tp){try{if(!seed)return{n:"TBD",o:100,tbd:true};if(seed.startsWith("3(")){var p=tp?tp[seed]:null;if(p){var t=ft(p);return{n:p,o:t?t.o:100,is3:true};}return{n:"3位",o:100,is3:true,tbd:true,seed:seed};}var pos=seed[0],g=seed[1],ranks=(gl&&gl[g])||[];var idx=pos==="1"?0:1;if(!ranks||ranks.length<=idx)return{n:g+pos+"位",o:100,tbd:true,grp:g};var tn=ranks[idx];if(!tn)return{n:g+pos+"位",o:100,tbd:true,grp:g};var t2=ft(tn);return{n:tn,o:t2?t2.o:100,grp:g};}catch(e){return{n:"TBD",o:100,tbd:true};}}
 function get3c(seed,gl){try{if(!seed||!seed.startsWith("3("))return[];var gs=seed.match(/[A-L]/g)||[];var r=[];gs.forEach(function(g){var ranks=(gl&&gl[g])||[];if(ranks.length>=3){var t=ft(ranks[2]);if(t)r.push({n:t.n,o:t.o,grp:g});}else{GRP[g].forEach(function(t){if(ranks.indexOf(t.n)<0)r.push({n:t.n,o:t.o,grp:g});});}});return r;}catch(e){return[];}}
-function calcScore(gl,des,ko){try{var total=0,bd=[];var ap=[];Object.values(gl||{}).forEach(function(arr){if(arr)arr.forEach(function(tn,i){if(i<2&&tn)ap.push(tn);});});ap.forEach(function(tn){var t=ft(tn);if(!t)return;var b=bsc(t.o);var dk=(des&&des.A===tn)?"A":(des&&des.B===tn)?"B":(des&&des.C===tn)?"C":null;var dm=dk?DES[dk].m:1;var pts=0,stg=[];Object.entries(SM).forEach(function(e){var k=e[0],v=e[1];if(k==="champ"){if(ko&&ko.champ===tn){pts+=b*v;stg.push("👑");}}else if(k==="third"){if(ko&&ko.third===tn){pts+=b*v;stg.push("🥉");}}else{if(ko&&ko[k]&&ko[k].indexOf(tn)>=0){pts+=b*v;stg.push(SL[k]);}}});var fp=pts*dm;if(dk&&ko&&ko.final&&ko.final.indexOf(tn)>=0)fp*=DES[dk].fb;if(dk&&ko&&ko.champ===tn)fp*=DES[dk].cb;if(fp>0)bd.push({tn:tn,b:b,dk:dk,pts:Math.round(fp*100)/100,stg:stg});total+=fp;});return{total:Math.round(total*100)/100,bd:bd.sort(function(a,b){return b.pts-a.pts;})};}catch(e){return{total:0,bd:[]};}}
+// 順位的中ボーナス: 1位的中 x1.5 / 2位的中 x1.25
+var RANK_BONUS = [1.5, 1.25];
+function calcScore(gl, des, ko, groups) {
+  try {
+    var total = 0, bd = [];
+    var picks = []; // [{tn, predictedRank, group}]
+    Object.entries(gl || {}).forEach(function (e) {
+      var g = e[0], arr = e[1];
+      if (arr) arr.forEach(function (tn, i) { if (i < 2 && tn) picks.push({ tn: tn, predictedRank: i, group: g }); });
+    });
+    picks.forEach(function (p) {
+      var tn = p.tn;
+      var t = ft(tn); if (!t) return;
+      var b = bsc(t.o);
+      var dk = (des && des.A === tn) ? "A" : (des && des.B === tn) ? "B" : (des && des.C === tn) ? "C" : null;
+      var dm = dk ? DES[dk].m : 1;
+      var pts = 0, stg = [];
+      Object.entries(SM).forEach(function (e) {
+        var k = e[0], v = e[1];
+        if (k === "champ") { if (ko && ko.champ === tn) { pts += b * v; stg.push("👑"); } }
+        else if (k === "third") { if (ko && ko.third === tn) { pts += b * v; stg.push("🥉"); } }
+        else { if (ko && ko[k] && ko[k].indexOf(tn) >= 0) { pts += b * v; stg.push(SL[k]); } }
+      });
+      var fp = pts * dm;
+      if (dk && ko && ko.final && ko.final.indexOf(tn) >= 0) fp *= DES[dk].fb;
+      if (dk && ko && ko.champ === tn) fp *= DES[dk].cb;
+      // 順位的中ボーナス（実グループ順位が確定している場合のみ）
+      var rankBonus = 1;
+      var grpStandings = groups && groups[p.group];
+      if (grpStandings && grpStandings.length > 0) {
+        var actualIdx = grpStandings.findIndex(function (r) { return r && r.n === tn; });
+        if (actualIdx === p.predictedRank && actualIdx <= 1) {
+          rankBonus = RANK_BONUS[actualIdx];
+        }
+      }
+      // ボーナスは「グループステージで進出した分」にも適用するため、
+      // グループ通過(R32)した時点で発動 (ベース × R32倍率) にも乗る
+      // ここでは fp 全体に乗算
+      fp *= rankBonus;
+      if (fp > 0) bd.push({ tn: tn, b: b, dk: dk, pts: Math.round(fp * 100) / 100, stg: stg, rankBonus: rankBonus });
+      total += fp;
+    });
+    return { total: Math.round(total * 100) / 100, bd: bd.sort(function (a, b) { return b.pts - a.pts; }) };
+  } catch (e) { return { total: 0, bd: [] }; }
+}
 function deriveRounds(r32,ko){var empty={r16:[{t1:null,t2:null},{t1:null,t2:null},{t1:null,t2:null},{t1:null,t2:null}],qf:[{t1:null,t2:null},{t1:null,t2:null}]};try{if(!r32||r32.length<8||!ko)return empty;var r16=[];var koR32=ko.r32||[];for(var i=0;i<8;i+=2){var m1=r32[i],m2=r32[i+1];var t1s=(m1&&m1.teams||[]).filter(function(t){return t&&t.n&&!t.tbd;});var t2s=(m2&&m2.teams||[]).filter(function(t){return t&&t.n&&!t.tbd;});r16.push({t1:t1s.find(function(t){return koR32.indexOf(t.n)>=0;})||null,t2:t2s.find(function(t){return koR32.indexOf(t.n)>=0;})||null});}var qf=[];var koR16=ko.r16||[];for(var j=0;j<4;j+=2){var a=[r16[j].t1,r16[j].t2].filter(function(x){return x&&x.n;});var b=[r16[j+1].t1,r16[j+1].t2].filter(function(x){return x&&x.n;});qf.push({t1:a.find(function(t){return koR16.indexOf(t.n)>=0;})||null,t2:b.find(function(t){return koR16.indexOf(t.n)>=0;})||null});}return{r16:r16,qf:qf};}catch(e){return empty;}}
 
 function shuffle(arr){var a=arr.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=a[i];a[i]=a[j];a[j]=tmp;}return a;}
@@ -129,7 +173,8 @@ export default function App() {
     return (k.r32 && k.r32.length) || (k.r16 && k.r16.length) || (k.qf && k.qf.length) || (k.sf && k.sf.length) || (k.final && k.final.length) || k.champ || k.third;
   }, [tour]);
   var scoreKo = liveStarted ? tour.ko : ko;
-  var score = useMemo(function () { try { return glComplete ? calcScore(gl, des, scoreKo) : null; } catch (e) { return null; } }, [gl, des, scoreKo, glComplete]);
+  var scoreGroups = (tour && tour.groups) || {};
+  var score = useMemo(function () { try { return glComplete ? calcScore(gl, des, scoreKo, scoreGroups) : null; } catch (e) { return null; } }, [gl, des, scoreKo, scoreGroups, glComplete]);
 
   var setDes = useCallback(function (tier, tn) {
     setDesS(function (p) { var n = { A: p.A, B: p.B, C: p.C }; if (n.A === tn) n.A = null; if (n.B === tn) n.B = null; if (n.C === tn) n.C = null; n[tier] = p[tier] === tn ? null : tn; return n; });
@@ -647,12 +692,13 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
 
   var emptyKo = { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
   var koForScore = liveStarted ? (tour && tour.ko) || emptyKo : emptyKo;
+  var groupsForScore = (tour && tour.groups) || {};
 
   var rows = useMemo(function () {
     var actualR32 = (liveStarted && tour && tour.ko && tour.ko.r32) || [];
     return list.map(function (p) {
       var sc = (function () {
-        try { return calcScore(p.gl || {}, p.des || {}, koForScore); }
+        try { return calcScore(p.gl || {}, p.des || {}, koForScore, groupsForScore); }
         catch (e) { return { total: 0, bd: [] }; }
       })();
       // 突破予想（top2）の的中数
@@ -661,7 +707,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
       var hits = actualR32.length ? picks.filter(function (n) { return actualR32.indexOf(n) >= 0; }).length : null;
       return { name: p.name, gl: p.gl || {}, des: p.des || {}, tp: p.tp || {}, score: sc, hits: hits, total: picks.length, updated_at: p.updated_at };
     }).sort(function (a, b) { return b.score.total - a.score.total; });
-  }, [list, koForScore, liveStarted, tour]);
+  }, [list, koForScore, groupsForScore, liveStarted, tour]);
 
   if (loading) {
     return <div style={{ padding: 60, textAlign: "center", color: $.dim, fontSize: 14 }}>読み込み中...</div>;
