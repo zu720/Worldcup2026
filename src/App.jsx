@@ -810,11 +810,13 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
                     );
                   })}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, marginLeft: 6 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1, color: r.hits == null ? $.dim : r.hits > 0 ? $.pitchL : $.txt2 }}>
-                    突破 {r.hits == null ? "—" : r.hits}/{r.total}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, marginLeft: 6, fontSize: 12, lineHeight: 1.25 }}>
+                  <div style={{ display: "flex", gap: 8, fontWeight: 700 }}>
+                    <span style={{ color: r.hits == null ? $.dim : r.hits > 0 ? $.pitchL : $.txt2 }}>突破 {r.hits == null ? "—" : r.hits}/{r.total}</span>
+                    <span style={{ color: r.rank1 == null ? $.dim : r.rank1 > 0 ? $.gold : $.txt2 }}>1位 {r.rank1 == null ? "—" : r.rank1}/{r.rank1Total}</span>
+                    <span style={{ color: r.rank2 == null ? $.dim : r.rank2 > 0 ? $.goldL : $.txt2 }}>2位 {r.rank2 == null ? "—" : r.rank2}/{r.rank2Total}</span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 2 }}>
                     <div style={{ fontFamily: fontH, fontSize: 22, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
                     <div style={{ fontSize: 11, color: $.txt2 }}>点</div>
                   </div>
