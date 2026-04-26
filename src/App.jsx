@@ -1,0 +1,1090 @@
+import { useState, useMemo, useCallback, useEffect } from "react";
+import {
+  savePrediction,
+  getPredictionByName,
+  getAllPredictions,
+  subscribePredictions,
+  getTournament,
+  saveTournament,
+  subscribeTournament,
+  myName as myNameStore,
+} from "./lib/api";
+import { hasSupabase } from "./lib/supabase";
+
+// ═══════════════════════════════════════════════════════════
+// Theme
+// ═══════════════════════════════════════════════════════════
+var $ = {
+  bg: "linear-gradient(135deg,#0e2747 0%,#1b3a6b 40%,#2a5891 100%)",
+  card: "rgba(255,255,255,.07)",
+  cardB: "rgba(255,255,255,.12)",
+  gold: "#fbbf24",
+  goldL: "#fde68a",
+  goldD: "#b45309",
+  pitchL: "#34d399",
+  pitch: "#10b981",
+  red: "#f87171",
+  redL: "#fca5a5",
+  blue: "#60a5fa",
+  blueL: "#93c5fd",
+  purple: "#c084fc",
+  purpleL: "#d8b4fe",
+  txt: "#f5f7fa",
+  txt2: "#cbd5e1",
+  dim: "#94a3b8",
+  border: "rgba(255,255,255,.16)",
+  glow: "0 0 24px rgba(251,191,36,.55)",
+  glowS: "0 0 12px rgba(251,191,36,.4)",
+};
+var font = "'Rajdhani','Noto Sans JP',sans-serif";
+var fontH = "'Bebas Neue','Rajdhani',sans-serif";
+
+// ═══════════════════════════════════════════════════════════
+// Data
+// ═══════════════════════════════════════════════════════════
+var FC = {"メキシコ":"mx","南アフリカ":"za","韓国":"kr","チェコ":"cz","カナダ":"ca","ボスニア":"ba","カタール":"qa","スイス":"ch","ブラジル":"br","モロッコ":"ma","ハイチ":"ht","スコットランド":"gb-sct","アメリカ":"us","パラグアイ":"py","オーストラリア":"au","トルコ":"tr","ドイツ":"de","キュラソー":"cw","コートジボワール":"ci","エクアドル":"ec","オランダ":"nl","日本":"jp","スウェーデン":"se","チュニジア":"tn","ベルギー":"be","エジプト":"eg","イラン":"ir","ニュージーランド":"nz","スペイン":"es","カーボベルデ":"cv","サウジアラビア":"sa","ウルグアイ":"uy","フランス":"fr","セネガル":"sn","イラク":"iq","ノルウェー":"no","アルゼンチン":"ar","アルジェリア":"dz","オーストリア":"at","ヨルダン":"jo","ポルトガル":"pt","DRコンゴ":"cd","ウズベキスタン":"uz","コロンビア":"co","イングランド":"gb-eng","クロアチア":"hr","ガーナ":"gh","パナマ":"pa"};
+
+function Fl({ n, s }) {
+  var c = FC[n];
+  if (!c) return null;
+  return <img src={"https://flagcdn.com/w80/" + c + ".png"} alt="" style={{ width: s || 16, height: Math.round((s || 16) * 0.67), objectFit: "cover", borderRadius: 3, verticalAlign: "middle", marginRight: 5, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }} />;
+}
+
+// 優勝オッズ（2026年4月時点 / ESPN・RotoWire・FOX 等の出版オッズに基づく）
+var GRP = {
+  A:[{n:"メキシコ",o:70},{n:"南アフリカ",o:250},{n:"韓国",o:100},{n:"チェコ",o:200}],
+  B:[{n:"カナダ",o:200},{n:"ボスニア",o:250},{n:"カタール",o:500},{n:"スイス",o:90}],
+  C:[{n:"ブラジル",o:8.5},{n:"モロッコ",o:60},{n:"ハイチ",o:1500},{n:"スコットランド",o:250}],
+  D:[{n:"アメリカ",o:65},{n:"パラグアイ",o:250},{n:"オーストラリア",o:250},{n:"トルコ",o:80}],
+  E:[{n:"ドイツ",o:14},{n:"キュラソー",o:2000},{n:"コートジボワール",o:200},{n:"エクアドル",o:100}],
+  F:[{n:"オランダ",o:20},{n:"日本",o:50},{n:"スウェーデン",o:150},{n:"チュニジア",o:250}],
+  G:[{n:"ベルギー",o:35},{n:"エジプト",o:200},{n:"イラン",o:200},{n:"ニュージーランド",o:500}],
+  H:[{n:"スペイン",o:4.5},{n:"カーボベルデ",o:1500},{n:"サウジアラビア",o:400},{n:"ウルグアイ",o:50}],
+  I:[{n:"フランス",o:5.5},{n:"セネガル",o:80},{n:"イラク",o:500},{n:"ノルウェー",o:29}],
+  J:[{n:"アルゼンチン",o:8.5},{n:"アルジェリア",o:200},{n:"オーストリア",o:90},{n:"ヨルダン",o:600}],
+  K:[{n:"ポルトガル",o:11},{n:"DRコンゴ",o:400},{n:"ウズベキスタン",o:400},{n:"コロンビア",o:40}],
+  L:[{n:"イングランド",o:6.5},{n:"クロアチア",o:50},{n:"ガーナ",o:200},{n:"パナマ",o:600}],
+};
+var AT = Object.values(GRP).flat();
+var ft = function(n){ return AT.find(function(t){ return t.n===n; }) || null; };
+var bsc = function(o){ return Math.round(Math.pow(o,.4)*10)/10; };
+
+// ステージ倍率（累積加算）
+//   R32: 0.2  ← 48中32通過(66%)＝ハードル低
+//   R16: 3.0  ← 32→16(50%)、選別が始まる「2番目に高得点」
+//   QF : 5.0  ← 16→8(50%)、ベスト8到達が「最高得点」
+//   SF : 2.5
+//   Final: 3.0
+//   Champ: 4.0  ← 優勝予想は最難関
+//   Third: 1.5
+var SM = { r32:.2, r16:3, qf:5, sf:2.5, final:3, champ:4, third:1.5 };
+var SL = { r32:"R32", r16:"R16", qf:"QF", sf:"SF", final:"F", champ:"👑", third:"🥉" };
+var DES = {
+  A:{ m:2.5, fb:2,   cb:2,   l:"1推し", c:$.red,    cl:$.redL,    bg:"rgba(239,68,68,.18)" },
+  B:{ m:1.8, fb:1.5, cb:1.5, l:"2推し", c:$.blue,   cl:$.blueL,   bg:"rgba(59,130,246,.18)" },
+  C:{ m:1.3, fb:1.2, cb:1.2, l:"3推し", c:$.purple, cl:$.purpleL, bg:"rgba(168,85,247,.18)" },
+};
+var LR32=[{id:73,s:["2A","2B"]},{id:74,s:["1C","2F"]},{id:75,s:["1E","3(A/B/C/D/F)"]},{id:76,s:["1F","2C"]},{id:77,s:["2E","2I"]},{id:78,s:["1I","3(C/D/F/G/H)"]},{id:79,s:["1A","3(C/E/F/H/I)"]},{id:80,s:["1L","3(E/H/I/J/K)"]}];
+var RR32=[{id:81,s:["1G","3(A/E/H/I/J)"]},{id:82,s:["1D","3(B/E/F/I/J)"]},{id:83,s:["1H","2J"]},{id:84,s:["2K","2L"]},{id:85,s:["1B","3(E/F/G/I/J)"]},{id:86,s:["2D","2G"]},{id:87,s:["1J","2H"]},{id:88,s:["1K","3(D/E/I/J/L)"]}];
+
+// ═══════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════
+function resolveSeed(seed,gl,tp){try{if(!seed)return{n:"TBD",o:100,tbd:true};if(seed.startsWith("3(")){var p=tp?tp[seed]:null;if(p){var t=ft(p);return{n:p,o:t?t.o:100,is3:true};}return{n:"3位",o:100,is3:true,tbd:true,seed:seed};}var pos=seed[0],g=seed[1],ranks=(gl&&gl[g])||[];var idx=pos==="1"?0:1;if(!ranks||ranks.length<=idx)return{n:g+pos+"位",o:100,tbd:true,grp:g};var tn=ranks[idx];if(!tn)return{n:g+pos+"位",o:100,tbd:true,grp:g};var t2=ft(tn);return{n:tn,o:t2?t2.o:100,grp:g};}catch(e){return{n:"TBD",o:100,tbd:true};}}
+function get3c(seed,gl){try{if(!seed||!seed.startsWith("3("))return[];var gs=seed.match(/[A-L]/g)||[];var r=[];gs.forEach(function(g){var ranks=(gl&&gl[g])||[];if(ranks.length>=3){var t=ft(ranks[2]);if(t)r.push({n:t.n,o:t.o,grp:g});}else{GRP[g].forEach(function(t){if(ranks.indexOf(t.n)<0)r.push({n:t.n,o:t.o,grp:g});});}});return r;}catch(e){return[];}}
+function calcScore(gl,des,ko){try{var total=0,bd=[];var ap=[];Object.values(gl||{}).forEach(function(arr){if(arr)arr.forEach(function(tn,i){if(i<2&&tn)ap.push(tn);});});ap.forEach(function(tn){var t=ft(tn);if(!t)return;var b=bsc(t.o);var dk=(des&&des.A===tn)?"A":(des&&des.B===tn)?"B":(des&&des.C===tn)?"C":null;var dm=dk?DES[dk].m:1;var pts=0,stg=[];Object.entries(SM).forEach(function(e){var k=e[0],v=e[1];if(k==="champ"){if(ko&&ko.champ===tn){pts+=b*v;stg.push("👑");}}else if(k==="third"){if(ko&&ko.third===tn){pts+=b*v;stg.push("🥉");}}else{if(ko&&ko[k]&&ko[k].indexOf(tn)>=0){pts+=b*v;stg.push(SL[k]);}}});var fp=pts*dm;if(dk&&ko&&ko.final&&ko.final.indexOf(tn)>=0)fp*=DES[dk].fb;if(dk&&ko&&ko.champ===tn)fp*=DES[dk].cb;if(fp>0)bd.push({tn:tn,b:b,dk:dk,pts:Math.round(fp*100)/100,stg:stg});total+=fp;});return{total:Math.round(total*100)/100,bd:bd.sort(function(a,b){return b.pts-a.pts;})};}catch(e){return{total:0,bd:[]};}}
+function deriveRounds(r32,ko){var empty={r16:[{t1:null,t2:null},{t1:null,t2:null},{t1:null,t2:null},{t1:null,t2:null}],qf:[{t1:null,t2:null},{t1:null,t2:null}]};try{if(!r32||r32.length<8||!ko)return empty;var r16=[];var koR32=ko.r32||[];for(var i=0;i<8;i+=2){var m1=r32[i],m2=r32[i+1];var t1s=(m1&&m1.teams||[]).filter(function(t){return t&&t.n&&!t.tbd;});var t2s=(m2&&m2.teams||[]).filter(function(t){return t&&t.n&&!t.tbd;});r16.push({t1:t1s.find(function(t){return koR32.indexOf(t.n)>=0;})||null,t2:t2s.find(function(t){return koR32.indexOf(t.n)>=0;})||null});}var qf=[];var koR16=ko.r16||[];for(var j=0;j<4;j+=2){var a=[r16[j].t1,r16[j].t2].filter(function(x){return x&&x.n;});var b=[r16[j+1].t1,r16[j+1].t2].filter(function(x){return x&&x.n;});qf.push({t1:a.find(function(t){return koR16.indexOf(t.n)>=0;})||null,t2:b.find(function(t){return koR16.indexOf(t.n)>=0;})||null});}return{r16:r16,qf:qf};}catch(e){return empty;}}
+
+function shuffle(arr){var a=arr.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=a[i];a[i]=a[j];a[j]=tmp;}return a;}
+function generateRandom(mode){var gl2={};Object.keys(GRP).forEach(function(g){var teams=GRP[g].slice();teams.sort(function(a,b){return a.o-b.o;});if(mode==="safe"){var second=shuffle(teams.slice(1,3))[0];gl2[g]=[teams[0].n,second.n];}else if(mode==="upset"){var weak=shuffle(teams.slice(1));gl2[g]=[weak[0].n,weak[1].n];}else{var rest=shuffle(teams.slice(1));gl2[g]=[teams[0].n,rest[0].n];}});var pool=[];Object.values(gl2).forEach(function(a){a.forEach(function(n){var t=ft(n);if(t)pool.push(t);});});var des2={A:null,B:null,C:null};if(pool.length>=3){pool.sort(function(a,b){return a.o-b.o;});var n=pool.length,picks;if(mode==="upset"){var hi=pool.slice(Math.floor(n/2));picks=shuffle(hi).slice(0,3);}else if(mode==="safe"){var lo=pool.slice(0,Math.max(6,Math.ceil(n/2)));picks=shuffle(lo).slice(0,3);}else{picks=shuffle(pool).slice(0,3);}des2.A=(picks[0]||{}).n||null;des2.B=(picks[1]||{}).n||null;des2.C=(picks[2]||{}).n||null;}return{gl:gl2,des:des2};}
+
+// ═══════════════════════════════════════════════════════════
+// Main App
+// ═══════════════════════════════════════════════════════════
+export default function App() {
+  var [tab, setTab] = useState("vote");
+  var [nm, setNm] = useState(myNameStore.get() || "");
+  var [entered, setEntered] = useState(false);
+  var [gl, setGl] = useState({});
+  var [des, setDesS] = useState({ A: null, B: null, C: null });
+  var [tp, setTp] = useState({});
+  var [ko, setKo] = useState({ r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null });
+  var [ag, setAg] = useState(null);
+  var [saveStatus, setSaveStatus] = useState("idle"); // idle|saving|saved|error
+  var [savedAt, setSavedAt] = useState(null);
+  var [loading, setLoading] = useState(false);
+  var [enterErr, setEnterErr] = useState("");
+  var [tour, setTour] = useState({ phase: "pre", groups: {}, ko: { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null }, vote_locked: false }); // 実結果
+  var [adminOpen, setAdminOpen] = useState(false);
+
+  var gk = Object.keys(GRP);
+  var allSorted = useMemo(function () { return AT.slice().sort(function (a, b) { return a.n.localeCompare(b.n, "ja"); }); }, []);
+  var glComplete = useMemo(function () { return gk.every(function (g) { return (gl[g] || []).length >= 2; }); }, [gl, gk]);
+  // 実結果が空ならシミュレーション用の自分のkoを、開始後は実結果を使う
+  var liveStarted = useMemo(function () {
+    var k = tour && tour.ko;
+    if (!k) return false;
+    return (k.r32 && k.r32.length) || (k.r16 && k.r16.length) || (k.qf && k.qf.length) || (k.sf && k.sf.length) || (k.final && k.final.length) || k.champ || k.third;
+  }, [tour]);
+  var scoreKo = liveStarted ? tour.ko : ko;
+  var score = useMemo(function () { try { return glComplete ? calcScore(gl, des, scoreKo) : null; } catch (e) { return null; } }, [gl, des, scoreKo, glComplete]);
+
+  var setDes = useCallback(function (tier, tn) {
+    setDesS(function (p) { var n = { A: p.A, B: p.B, C: p.C }; if (n.A === tn) n.A = null; if (n.B === tn) n.B = null; if (n.C === tn) n.C = null; n[tier] = p[tier] === tn ? null : tn; return n; });
+  }, []);
+  var rankTeam = useCallback(function (g, tn) {
+    setGl(function (p) { var cur = (p[g] || []).slice(); var idx = cur.indexOf(tn); return Object.assign({}, p, { [g]: idx >= 0 ? cur.slice(0, idx) : cur.concat(tn) }); });
+  }, []);
+  var pick3 = useCallback(function (seed, tn) {
+    setTp(function (p) { return Object.assign({}, p, { [seed]: p[seed] === tn ? null : tn }); });
+  }, []);
+  var adv = useCallback(function (stage, tn) { if (!tn) return; setKo(function (prev) { try { var n = { r32: prev.r32.slice(), r16: prev.r16.slice(), qf: prev.qf.slice(), sf: prev.sf.slice(), final: prev.final.slice(), champ: prev.champ, third: prev.third }; if (stage === "champ" || stage === "third") { n[stage] = n[stage] === tn ? null : tn; return n; } var idx = n[stage].indexOf(tn); if (idx >= 0) { n[stage] = n[stage].filter(function (t) { return t !== tn; }); ["r32", "r16", "qf", "sf", "final"].forEach(function (s, si, arr) { if (si > arr.indexOf(stage)) n[s] = n[s].filter(function (t) { return t !== tn; }); }); if (n.champ === tn) n.champ = null; if (n.third === tn) n.third = null; } else { n[stage] = n[stage].concat(tn); } return n; } catch (e) { return prev; } }); }, []);
+  var applyRandom = function (mode) { var r = generateRandom(mode); setGl(r.gl); setDesS(r.des); setKo({ r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null }); setTp({}); };
+
+  var leftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s2) { return resolveSeed(s2, gl, tp); }) }; }); } catch (e) { return []; } }, [gl, tp]);
+  var rightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s2) { return resolveSeed(s2, gl, tp); }) }; }); } catch (e) { return []; } }, [gl, tp]);
+  var leftD = useMemo(function () { return deriveRounds(leftRes, ko); }, [leftRes, ko]);
+  var rightD = useMemo(function () { return deriveRounds(rightRes, ko); }, [rightRes, ko]);
+  var ctx = { ko: ko, des: des, adv: adv, gl: gl, tp: tp, pick3: pick3, setAg: setAg };
+
+  // ──────────────────────────────────────────────────────
+  // Enter / Save / Load
+  // ──────────────────────────────────────────────────────
+  async function enterName() {
+    var t = (nm || "").trim();
+    if (!t) { setEnterErr("名前を入力してください"); return; }
+    setEnterErr("");
+    setLoading(true);
+    try {
+      var existing = await getPredictionByName(t);
+      if (existing) {
+        setGl(existing.gl || {});
+        setDesS(existing.des || { A: null, B: null, C: null });
+        setTp(existing.tp || {});
+      }
+      myNameStore.set(t);
+      setEntered(true);
+    } catch (e) {
+      setEnterErr("読込エラー: " + (e.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+  async function saveNow() {
+    var t = (nm || "").trim();
+    if (!t) { alert("名前を入力してください"); return; }
+    setSaveStatus("saving");
+    try {
+      await savePrediction({ name: t, gl: gl, des: des, tp: tp });
+      setSaveStatus("saved");
+      setSavedAt(new Date());
+      setTimeout(function () { setSaveStatus(function (s) { return s === "saved" ? "idle" : s; }); }, 2400);
+    } catch (e) {
+      console.error(e);
+      setSaveStatus("error");
+    }
+  }
+  function logout() {
+    myNameStore.clear();
+    setEntered(false);
+    setNm("");
+    setGl({});
+    setDesS({ A: null, B: null, C: null });
+    setTp({});
+    setKo({ r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null });
+  }
+
+  // Auto-enter if name already in localStorage
+  useEffect(function () {
+    var saved = myNameStore.get();
+    if (saved && !entered) {
+      setNm(saved);
+      // wait one tick then auto-enter
+      (async function () {
+        try {
+          var existing = await getPredictionByName(saved);
+          if (existing) {
+            setGl(existing.gl || {});
+            setDesS(existing.des || { A: null, B: null, C: null });
+            setTp(existing.tp || {});
+          }
+          setEntered(true);
+        } catch (e) { /* ignore */ }
+      })();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load + subscribe tournament (live actual results)
+  useEffect(function () {
+    var live = true;
+    function load() {
+      getTournament()
+        .then(function (t) { if (live && t) setTour(t); })
+        .catch(function () { /* ignore */ });
+    }
+    load();
+    var unsub = subscribeTournament(load);
+    return function () { live = false; if (unsub) unsub(); };
+  }, []);
+
+  // ──────────────────────────────────────────────────────
+  // Render
+  // ──────────────────────────────────────────────────────
+  if (!entered) {
+    return <Gate nm={nm} setNm={setNm} enter={enterName} loading={loading} err={enterErr} />;
+  }
+
+  return (
+    <div>
+      <Styles />
+      <div style={{ fontFamily: font, background: $.bg, color: $.txt, minHeight: "100vh", paddingBottom: 100 }}>
+        <div style={{ position: "fixed", inset: 0, opacity: 0.04, backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
+        <Header tab={tab} setTab={setTab} nm={nm} score={score} logout={logout} tour={tour} openAdmin={function () { setAdminOpen(true); }} />
+        <main style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 16px" }}>
+          {tab === "vote" && (
+            <VoteTab
+              gl={gl} des={des} ko={ko} tp={tp} ag={ag} setAg={setAg}
+              rankTeam={rankTeam} setDes={setDes} applyRandom={applyRandom}
+              allSorted={allSorted} gk={gk} glComplete={glComplete}
+              leftRes={leftRes} rightRes={rightRes} leftD={leftD} rightD={rightD}
+              adv={adv} ctx={ctx} score={score} tour={tour} liveStarted={liveStarted}
+            />
+          )}
+          {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} />}
+          {tab === "live" && <LiveTab tour={tour} liveStarted={liveStarted} />}
+          {adminOpen && <AdminPanel tour={tour} setTour={setTour} close={function () { setAdminOpen(false); }} />}
+        </main>
+        <SaveBar saveStatus={saveStatus} savedAt={savedAt} saveNow={saveNow} glComplete={glComplete} score={score} />
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Gate (name entry screen)
+// ═══════════════════════════════════════════════════════════
+function Gate({ nm, setNm, enter, loading, err }) {
+  return (
+    <div>
+      <Styles />
+      <div style={{ minHeight: "100vh", background: $.bg, color: $.txt, fontFamily: font, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", inset: 0, opacity: 0.06, backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", top: -120, right: -120, width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle," + $.gold + "30,transparent 60%)", filter: "blur(10px)" }} />
+        <div style={{ position: "absolute", bottom: -120, left: -120, width: 380, height: 380, borderRadius: "50%", background: "radial-gradient(circle," + $.blue + "30,transparent 60%)", filter: "blur(10px)" }} />
+        <div className="fade-in" style={{ width: "100%", maxWidth: 460, position: "relative", zIndex: 2 }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 76, height: 76, borderRadius: 16, background: "linear-gradient(135deg," + $.gold + "," + $.goldD + ")", boxShadow: $.glow, fontSize: 38, marginBottom: 14, animation: "pulse 3s ease-in-out infinite" }}>⚽</div>
+            <div style={{ fontFamily: fontH, fontSize: 11, letterSpacing: 8, color: $.gold, marginBottom: 4 }}>PREDICTION GAME</div>
+            <div style={{ fontFamily: fontH, fontSize: 30, letterSpacing: 3 }}>FIFA WORLD CUP 2026</div>
+            <div style={{ fontSize: 12, color: $.txt2, marginTop: 4, letterSpacing: 2 }}>〜 Road to 三幸園 〜</div>
+          </div>
+          <div style={{ background: "linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02))", border: "1px solid " + $.border, borderRadius: 16, padding: 28, backdropFilter: "blur(8px)", boxShadow: "0 20px 60px rgba(0,0,0,.4)" }}>
+            <div style={{ fontFamily: fontH, fontSize: 12, letterSpacing: 4, color: $.gold, marginBottom: 6 }}>YOUR NAME</div>
+            <input
+              value={nm}
+              onChange={function (e) { setNm(e.target.value); }}
+              onKeyDown={function (e) { if (e.key === "Enter") enter(); }}
+              placeholder="例: IZUMI"
+              autoFocus
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 10, border: "1.5px solid " + $.border, background: "rgba(0,0,0,.25)", color: $.txt, fontSize: 16, fontFamily: font, outline: "none", boxSizing: "border-box", letterSpacing: 1 }}
+            />
+            <div style={{ fontSize: 11, color: $.dim, marginTop: 8, lineHeight: 1.6 }}>
+              同じ名前で再訪すると予想の続きから編集できます。<br />
+              {hasSupabase ? "✓ Supabase接続中（みんなで共有）" : "⚠ ローカル保存モード（端末内のみ）"}
+            </div>
+            {err && <div style={{ color: $.redL, fontSize: 12, marginTop: 10 }}>{err}</div>}
+            <button
+              onClick={enter}
+              disabled={loading}
+              style={{ width: "100%", marginTop: 18, padding: "14px 0", borderRadius: 10, border: "none", background: "linear-gradient(135deg," + $.gold + "," + $.goldD + ")", color: "#000", fontSize: 15, fontFamily: fontH, fontWeight: 700, letterSpacing: 4, cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1, boxShadow: loading ? "none" : $.glowS, transition: "all .2s" }}
+            >
+              {loading ? "LOADING..." : "▶ KICK OFF"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Header
+// ═══════════════════════════════════════════════════════════
+var PHASE_LABEL = { pre: "開幕前", groups: "グループステージ", r32: "ベスト32", r16: "ベスト16", qf: "準々決勝", sf: "準決勝", final: "決勝", done: "閉幕" };
+
+function Header({ tab, setTab, nm, score, logout, tour, openAdmin }) {
+  var phase = (tour && tour.phase) || "pre";
+  var phaseLabel = PHASE_LABEL[phase] || phase;
+  return (
+    <header style={{ background: "linear-gradient(180deg,rgba(5,7,13,.95),rgba(5,7,13,.78))", borderBottom: "1px solid " + $.border, padding: "0 20px", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(10px)" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg," + $.gold + "," + $.goldD + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, boxShadow: $.glow }}>⚽</div>
+          <div>
+            <div style={{ fontFamily: fontH, fontSize: 10, letterSpacing: 6, color: $.gold }}>PREDICTION GAME</div>
+            <div style={{ fontFamily: fontH, fontSize: 20, letterSpacing: 2 }}>FIFA WORLD CUP 2026</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 10, color: $.dim, letterSpacing: 1 }}>あなた</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: $.txt, letterSpacing: 1 }}>{nm}</div>
+          </div>
+          {score && (
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 10, color: $.dim, letterSpacing: 1 }}>得点</div>
+              <div className="pulse-glow" style={{ fontFamily: fontH, fontSize: 26, color: $.gold, letterSpacing: 1, lineHeight: 1 }}>{score.total.toFixed(1)}</div>
+            </div>
+          )}
+          <button onClick={logout} title="名前を変更" style={{ background: "transparent", border: "1px solid " + $.border, color: $.dim, fontSize: 11, padding: "6px 10px", borderRadius: 6, cursor: "pointer" }}>名前変更</button>
+          <button onClick={openAdmin} title="管理者" style={{ background: "transparent", border: "1px solid " + $.border, color: $.dim, fontSize: 14, padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>⚙️</button>
+        </div>
+      </div>
+      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex" }}>
+        {[{ id: "vote", l: "🗳 予想する" }, { id: "results", l: "📊 みんなの予想" }, { id: "live", l: "⚽ 大会途中経過" }].map(function (t) {
+          var act = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={function () { setTab(t.id); }}
+              style={{ fontSize: 13, padding: "10px 22px", cursor: "pointer", border: "none", borderBottom: act ? "2px solid " + $.gold : "2px solid transparent", background: "transparent", color: act ? $.gold : $.dim, transition: "color .2s", fontWeight: act ? 700 : 400, letterSpacing: 0.5 }}
+            >
+              {t.l}
+            </button>
+          );
+        })}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: phase === "pre" ? $.dim : $.pitchL, padding: "0 10px 6px 0" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: phase === "pre" ? $.dim : $.pitchL, boxShadow: phase === "pre" ? "none" : "0 0 8px " + $.pitchL, animation: phase === "pre" ? "none" : "pulse 2s ease-in-out infinite" }} />
+          <span style={{ fontWeight: 700 }}>大会状況: {phaseLabel}</span>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Vote Tab
+// ═══════════════════════════════════════════════════════════
+function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, allSorted, gk, glComplete, leftRes, rightRes, leftD, rightD, adv, ctx, score }) {
+  return (
+    <div className="fade-in">
+      {/* QUICK VOTE */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 3, color: $.gold, marginRight: 4 }}>🎲 ランダム投票:</span>
+        {[
+          { mode: "upset",    label: "大穴狙い",   color: $.red,  cl: $.redL },
+          { mode: "balanced", label: "バランス型", color: $.blue, cl: $.blueL },
+          { mode: "safe",     label: "ガチガチ",   color: $.gold, cl: $.goldL },
+        ].map(function (m) {
+          return (
+            <button
+              key={m.mode}
+              onClick={function () { applyRandom(m.mode); }}
+              className="qv-chip"
+              style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 2, padding: "8px 16px", borderRadius: 8, cursor: "pointer", border: "1px solid " + m.color + "60", background: "linear-gradient(135deg," + m.color + "20,transparent)", color: m.cl, fontWeight: 700, transition: "all .15s" }}
+            >
+              {m.label}
+            </button>
+          );
+        })}
+        <span style={{ fontSize: 11, color: $.dim }}>押すたびに別パターン</span>
+      </div>
+
+      {/* BONUS TEAMS */}
+      <Sec icon="🌟" title="推しベスト3チーム" sub="3チームを選ぶと得点に倍率がかかる（1推し x2.5 / 2推し x1.8 / 3推し x1.3）" />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 32 }}>
+        {["A", "B", "C"].map(function (k) {
+          var cfg = DES[k], picked = des[k];
+          return (
+            <div key={k} style={{ borderRadius: 14, overflow: "hidden", border: "1px solid " + (picked ? cfg.c + "70" : $.border), background: $.card, boxShadow: picked ? "0 0 30px " + cfg.c + "30" : "none", transition: "all .25s" }}>
+              <div style={{ padding: "12px 16px", background: picked ? cfg.bg : "rgba(255,255,255,.02)", borderBottom: "1px solid " + $.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <span style={{ fontFamily: fontH, fontSize: 20, letterSpacing: 3, color: cfg.cl }}>{cfg.l}</span>
+                  <span style={{ fontSize: 11, color: $.dim, marginLeft: 8, fontFamily: fontH }}>x{cfg.m}</span>
+                </div>
+                {picked && (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: cfg.cl, display: "flex", alignItems: "center" }}>
+                    <Fl n={picked} s={16} />{picked}
+                  </span>
+                )}
+              </div>
+              <div style={{ maxHeight: 280, overflowY: "auto" }}>
+                {allSorted.map(function (t) {
+                  var isThis = des[k] === t.n;
+                  var ub = des.A === t.n ? "A" : des.B === t.n ? "B" : des.C === t.n ? "C" : null;
+                  var isO = ub && ub !== k;
+                  var b = bsc(t.o);
+                  return (
+                    <div
+                      key={t.n}
+                      onClick={function () { if (!isO) setDes(k, t.n); }}
+                      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 14px", cursor: isO ? "default" : "pointer", background: isThis ? cfg.bg : "transparent", borderBottom: "1px solid rgba(255,255,255,.03)", opacity: isO ? 0.25 : 1, fontSize: 12 }}
+                    >
+                      <span style={{ fontWeight: isThis ? 700 : 400, color: isThis ? cfg.cl : $.txt, display: "flex", alignItems: "center", flex: 1, minWidth: 0 }}>
+                        <Fl n={t.n} s={14} />{t.n}
+                      </span>
+                      <span style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                        <span style={{ fontSize: 11, color: $.gold, fontFamily: fontH, fontWeight: 700, minWidth: 42, textAlign: "right" }} title="基礎点（オッズ調整後）">x{b.toFixed(1)}</span>
+                        {isO && <span style={{ fontSize: 9, color: DES[ub].cl }}>{ub}</span>}
+                        {isThis && <span style={{ color: cfg.cl }}>✓</span>}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* GROUP STAGE */}
+      {ag && <GroupPanel g={ag} gl={gl} rankTeam={rankTeam} des={des} close={function () { setAg(null); }} />}
+      <Sec icon="🏟️" title="グループステージ予想" sub="各グループの順位を設定（1位→2位→3位→4位の順にクリック）" />
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+        {gk.map(function (g) {
+          var done = (gl[g] || []).length >= 2;
+          var act = ag === g;
+          return (
+            <button
+              key={g}
+              onClick={function () { setAg(act ? null : g); }}
+              style={{ fontFamily: fontH, fontSize: 17, letterSpacing: 2, padding: "8px 16px", borderRadius: 8, cursor: "pointer", border: "1px solid " + (act ? $.gold : done ? $.pitchL + "60" : $.border), background: act ? "rgba(245,197,24,.18)" : done ? "rgba(34,197,94,.10)" : "rgba(255,255,255,.02)", color: act ? $.gold : done ? $.pitchL : $.dim, transition: "all .15s", boxShadow: act ? $.glowS : "none" }}
+            >
+              {g}{done ? " ✓" : ""}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* BRACKET */}
+      {glComplete && (
+        <div>
+          <Sec icon="🏆" title="決勝トーナメント" sub="チーム名クリックで勝ち上がり（自分のシミュレーション用）" />
+          <BView leftRes={leftRes} rightRes={rightRes} leftD={leftD} rightD={rightD} ko={ko} ctx={ctx} />
+          {ko.sf.length >= 2 && <ThirdP ko={ko} adv={adv} />}
+          {score && score.bd.length > 0 && <BDown score={score} />}
+        </div>
+      )}
+      {!glComplete && (
+        <div style={{ textAlign: "center", padding: 40, border: "1px dashed " + $.border, borderRadius: 12, marginTop: 12 }}>
+          <div style={{ fontSize: 16, color: $.dim, fontWeight: 700 }}>12グループすべて設定すると決勝トーナメントが表示されます</div>
+          <p style={{ color: $.dim, marginTop: 8, fontSize: 12 }}>上のA〜Lボタンから順位設定してください</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Save Bar (sticky bottom)
+// ═══════════════════════════════════════════════════════════
+function SaveBar({ saveStatus, savedAt, saveNow, glComplete, score }) {
+  var label = "💾 予想を保存する";
+  var bg = "linear-gradient(135deg," + $.gold + "," + $.goldD + ")";
+  var fg = "#000";
+  if (saveStatus === "saving") { label = "保存中..."; }
+  else if (saveStatus === "saved") { label = "✓ 保存しました"; bg = "linear-gradient(135deg," + $.pitchL + "," + $.pitch + ")"; fg = "#fff"; }
+  else if (saveStatus === "error") { label = "⚠ エラー（もう一度押す）"; bg = "linear-gradient(135deg," + $.red + "," + $.redL + ")"; fg = "#fff"; }
+  return (
+    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "linear-gradient(180deg,rgba(5,7,13,.0),rgba(5,7,13,.92) 30%)", padding: "20px 16px", zIndex: 90, pointerEvents: "none" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, pointerEvents: "auto" }}>
+        <div style={{ fontSize: 11, color: $.dim, letterSpacing: 1 }}>
+          {savedAt ? <span>✓ 最終保存: {savedAt.toLocaleTimeString("ja-JP")}</span> : <span>{glComplete ? "予想完了！保存できます" : "12グループすべて設定すると保存できます"}</span>}
+          {score && <span style={{ marginLeft: 12, color: $.gold, fontFamily: fontH, letterSpacing: 2 }}>得点 {score.total.toFixed(1)}</span>}
+        </div>
+        <button
+          onClick={saveNow}
+          disabled={saveStatus === "saving"}
+          style={{ padding: "14px 36px", borderRadius: 10, border: "none", background: bg, color: fg, fontSize: 14, fontWeight: 700, letterSpacing: 1, cursor: saveStatus === "saving" ? "default" : "pointer", boxShadow: saveStatus === "saving" ? "none" : "0 4px 24px rgba(245,197,24,.45)", transition: "all .2s", minWidth: 220 }}
+        >
+          {label}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Results Tab
+// ═══════════════════════════════════════════════════════════
+function ResultsTab({ myName: myName_, tour, liveStarted }) {
+  var [list, setList] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [err, setErr] = useState("");
+  var [open, setOpen] = useState(null); // expanded player
+
+  useEffect(function () {
+    var live = true;
+    function load() {
+      getAllPredictions()
+        .then(function (data) { if (!live) return; setList(data || []); setLoading(false); })
+        .catch(function (e) { if (!live) return; setErr(e.message || String(e)); setLoading(false); });
+    }
+    load();
+    var unsub = subscribePredictions(load);
+    return function () { live = false; if (unsub) unsub(); };
+  }, []);
+
+  var emptyKo = { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
+  var koForScore = liveStarted ? (tour && tour.ko) || emptyKo : emptyKo;
+
+  var rows = useMemo(function () {
+    var actualR32 = (liveStarted && tour && tour.ko && tour.ko.r32) || [];
+    return list.map(function (p) {
+      var sc = (function () {
+        try { return calcScore(p.gl || {}, p.des || {}, koForScore); }
+        catch (e) { return { total: 0, bd: [] }; }
+      })();
+      // 突破予想（top2）の的中数
+      var picks = [];
+      Object.values(p.gl || {}).forEach(function (arr) { (arr || []).slice(0, 2).forEach(function (n) { if (n) picks.push(n); }); });
+      var hits = actualR32.length ? picks.filter(function (n) { return actualR32.indexOf(n) >= 0; }).length : null;
+      return { name: p.name, gl: p.gl || {}, des: p.des || {}, tp: p.tp || {}, score: sc, hits: hits, total: picks.length, updated_at: p.updated_at };
+    }).sort(function (a, b) { return b.score.total - a.score.total; });
+  }, [list, koForScore, liveStarted, tour]);
+
+  if (loading) {
+    return <div style={{ padding: 60, textAlign: "center", color: $.dim, fontSize: 14 }}>読み込み中...</div>;
+  }
+  if (err) {
+    return <div style={{ padding: 60, textAlign: "center", color: $.redL }}>エラー: {err}</div>;
+  }
+
+  return (
+    <div className="fade-in">
+      <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）")} />
+      {rows.length === 0 && (
+        <div style={{ padding: 60, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12 }}>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>まだ予想がありません</div>
+          <p style={{ marginTop: 8, fontSize: 12 }}>「予想する」タブで予想を入れて保存してください</p>
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {rows.map(function (r, i) {
+          var isMe = r.name === myName_;
+          var isOpen = open === r.name;
+          return (
+            <div
+              key={r.name}
+              style={{
+                borderRadius: 8,
+                border: "1px solid " + (isMe ? $.gold + "70" : $.border),
+                background: isMe ? "linear-gradient(135deg,rgba(245,197,24,.08),transparent 60%)" : $.card,
+                boxShadow: isMe ? "0 0 14px rgba(245,197,24,.15)" : "none",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                onClick={function () { setOpen(isOpen ? null : r.name); }}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", cursor: "pointer", flexWrap: "wrap" }}
+              >
+                <div style={{ fontFamily: fontH, fontSize: 20, color: i === 0 ? $.gold : i === 1 ? "#bbb" : i === 2 ? "#cd7f32" : $.dim, width: 36, textAlign: "center", flexShrink: 0 }}>
+                  {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "#" + (i + 1)}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 110 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: isMe ? $.gold : $.txt }}>{r.name}</span>
+                  {isMe && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700 }}>あなた</span>}
+                </div>
+                <div style={{ display: "flex", gap: 6, flex: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {(["A", "B", "C"]).map(function (k) {
+                    var n = r.des && r.des[k];
+                    var cfg = DES[k];
+                    if (!n) {
+                      return <span key={k} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l} 未選択</span>;
+                    }
+                    return (
+                      <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, padding: "3px 8px", borderRadius: 5, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700 }}>
+                        <span style={{ fontSize: 9, opacity: .8 }}>{cfg.l}</span>
+                        <Fl n={n} s={12} />{n}
+                      </span>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, marginLeft: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1, color: r.hits == null ? $.dim : r.hits > 0 ? $.pitchL : $.txt2 }}>
+                    突破 {r.hits == null ? "—" : r.hits}/{r.total}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                    <div style={{ fontFamily: fontH, fontSize: 22, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
+                    <div style={{ fontSize: 11, color: $.txt2 }}>点</div>
+                  </div>
+                </div>
+                <div style={{ color: $.dim, fontSize: 12, marginLeft: 4 }}>{isOpen ? "▲" : "▼"}</div>
+              </div>
+              {isOpen && (
+                <div style={{ borderTop: "1px solid " + $.border, padding: 10, background: "rgba(0,0,0,.18)" }}>
+                  <div style={{ fontSize: 11, color: $.gold, marginBottom: 6, fontWeight: 700 }}>グループ予想</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 4, fontSize: 10 }}>
+                    {Object.keys(GRP).map(function (g) {
+                      var ranks = (r.gl && r.gl[g]) || [];
+                      return (
+                        <div key={g} style={{ padding: 6, background: "rgba(255,255,255,.03)", borderRadius: 5, border: "1px solid " + $.border }}>
+                          <div style={{ fontSize: 10, color: $.gold, fontWeight: 700, marginBottom: 2 }}>{g}</div>
+                          {ranks.length === 0 ? <span style={{ color: $.dim }}>—</span> : ranks.slice(0, 2).map(function (n, idx) {
+                            return <div key={n} style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ color: $.dim, width: 10 }}>{idx + 1}</span><Fl n={n} s={11} />{n}</div>;
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Admin Panel (manual result entry)
+// ═══════════════════════════════════════════════════════════
+function AdminPanel({ tour, setTour, close }) {
+  var ADMIN_PW = import.meta.env.VITE_ADMIN_PASSWORD || "sankoen2026";
+  var [unlocked, setUnlocked] = useState(false);
+  var [pw, setPw] = useState("");
+  var [pwErr, setPwErr] = useState("");
+  var [phase, setPhase] = useState((tour && tour.phase) || "pre");
+  var [voteLocked, setVoteLocked] = useState((tour && tour.vote_locked) || false);
+  var [ko, setKoL] = useState(JSON.parse(JSON.stringify((tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null })));
+  var [msg, setMsg] = useState("");
+  var [saving, setSaving] = useState(false);
+
+  function doUnlock() {
+    if (pw === ADMIN_PW) { setUnlocked(true); setPwErr(""); }
+    else setPwErr("合言葉が違います");
+  }
+  function toggleStage(stage, n) {
+    setKoL(function (p) {
+      var arr = (p[stage] || []).slice();
+      var i = arr.indexOf(n);
+      if (i >= 0) arr.splice(i, 1); else arr.push(n);
+      return Object.assign({}, p, { [stage]: arr });
+    });
+  }
+  function setSingle(stage, n) {
+    setKoL(function (p) { return Object.assign({}, p, { [stage]: p[stage] === n ? null : n }); });
+  }
+  async function save() {
+    setSaving(true);
+    setMsg("");
+    try {
+      await saveTournament({ phase: phase, vote_locked: voteLocked, ko: ko });
+      setTour(function (t) { return Object.assign({}, t, { phase: phase, vote_locked: voteLocked, ko: ko }); });
+      setMsg("✓ 保存しました");
+      setTimeout(function () { setMsg(""); }, 2000);
+    } catch (e) {
+      setMsg("✕ エラー: " + (e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  }
+  var STAGES = [
+    { k: "r32", l: "ベスト32進出（16チーム想定）" },
+    { k: "r16", l: "ベスト16進出（8チーム）" },
+    { k: "qf",  l: "準々決勝進出（4チーム）" },
+    { k: "sf",  l: "準決勝進出（2チーム）" },
+    { k: "final", l: "決勝進出（2チーム）" },
+  ];
+  var PHASES = [
+    { k: "pre", l: "開幕前" },
+    { k: "groups", l: "グループ" },
+    { k: "r32", l: "R32" },
+    { k: "r16", l: "R16" },
+    { k: "qf", l: "準々" },
+    { k: "sf", l: "準決" },
+    { k: "final", l: "決勝" },
+    { k: "done", l: "閉幕" },
+  ];
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 20, overflowY: "auto", backdropFilter: "blur(4px)" }} onClick={close}>
+      <div onClick={function (e) { e.stopPropagation(); }} style={{ width: "100%", maxWidth: 920, background: "linear-gradient(135deg,#10172a,#0a1424)", border: "1px solid " + $.gold + "55", borderRadius: 14, padding: 20, marginTop: 30, marginBottom: 30, boxShadow: "0 30px 80px rgba(0,0,0,.6)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: $.gold }}>🔧 管理者パネル</div>
+          <button onClick={close} style={{ background: "transparent", border: "1px solid " + $.border, color: $.txt2, fontSize: 12, padding: "4px 12px", borderRadius: 6, cursor: "pointer" }}>閉じる</button>
+        </div>
+
+        {!unlocked ? (
+          <div style={{ padding: 20, textAlign: "center" }}>
+            <div style={{ fontSize: 13, color: $.txt2, marginBottom: 10 }}>合言葉を入力してください</div>
+            <input
+              type="password"
+              value={pw}
+              onChange={function (e) { setPw(e.target.value); }}
+              onKeyDown={function (e) { if (e.key === "Enter") doUnlock(); }}
+              autoFocus
+              style={{ width: 240, padding: "10px 14px", borderRadius: 8, border: "1px solid " + $.border, background: "rgba(0,0,0,.3)", color: $.txt, fontSize: 14, outline: "none" }}
+            />
+            <div>
+              <button onClick={doUnlock} style={{ marginTop: 12, padding: "10px 28px", border: "none", borderRadius: 8, background: $.gold, color: "#000", fontWeight: 700, cursor: "pointer" }}>解除</button>
+            </div>
+            {pwErr && <div style={{ color: $.redL, marginTop: 8, fontSize: 12 }}>{pwErr}</div>}
+          </div>
+        ) : (
+          <div>
+            {/* Phase + lock */}
+            <div style={{ marginBottom: 16, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
+              <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 8 }}>大会フェーズ</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                {PHASES.map(function (p) {
+                  var act = phase === p.k;
+                  return <button key={p.k} onClick={function () { setPhase(p.k); }} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 6, border: "1px solid " + (act ? $.gold : $.border), background: act ? "rgba(245,197,24,.15)" : "transparent", color: act ? $.gold : $.txt2, cursor: "pointer", fontWeight: act ? 700 : 400 }}>{p.l}</button>;
+                })}
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: $.txt2, cursor: "pointer" }}>
+                <input type="checkbox" checked={voteLocked} onChange={function (e) { setVoteLocked(e.target.checked); }} />
+                投票ロック（全員編集不可）
+              </label>
+            </div>
+
+            {/* KO stages */}
+            {STAGES.map(function (s) {
+              var picked = ko[s.k] || [];
+              return (
+                <div key={s.k} style={{ marginBottom: 12, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
+                  <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 6 }}>{s.l}　<span style={{ color: $.dim, fontWeight: 400 }}>選択中: {picked.length}</span></div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {AT.map(function (t) {
+                      var on = picked.indexOf(t.n) >= 0;
+                      return <button key={t.n} onClick={function () { toggleStage(s.k, t.n); }} style={{ fontSize: 10, padding: "3px 7px", borderRadius: 4, border: "1px solid " + (on ? $.pitchL : $.border), background: on ? "rgba(34,197,94,.18)" : "transparent", color: on ? $.pitchL : $.txt2, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}><Fl n={t.n} s={10} />{t.n}</button>;
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* champ + third */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              {[{ k: "champ", l: "👑 優勝", pool: ko.final }, { k: "third", l: "🥉 3位", pool: ko.qf }].map(function (s) {
+                return (
+                  <div key={s.k} style={{ padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
+                    <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 6 }}>{s.l}</div>
+                    {(!s.pool || s.pool.length === 0) ? (
+                      <div style={{ fontSize: 11, color: $.dim }}>{s.k === "champ" ? "決勝進出を先に設定" : "準々決勝進出を先に設定"}</div>
+                    ) : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {s.pool.map(function (n) {
+                          var on = ko[s.k] === n;
+                          return <button key={n} onClick={function () { setSingle(s.k, n); }} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 5, border: "1px solid " + (on ? $.gold : $.border), background: on ? "rgba(245,197,24,.18)" : "transparent", color: on ? $.gold : $.txt2, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}><Fl n={n} s={11} />{n}</button>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Save bar */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid " + $.border }}>
+              <div style={{ fontSize: 12, color: msg.startsWith("✓") ? $.pitchL : msg ? $.redL : $.dim }}>{msg || "変更後は保存ボタンを押してください"}</div>
+              <button onClick={save} disabled={saving} style={{ padding: "10px 24px", border: "none", borderRadius: 8, background: $.gold, color: "#000", fontWeight: 700, cursor: saving ? "default" : "pointer", opacity: saving ? .6 : 1 }}>{saving ? "保存中..." : "💾 実結果を保存"}</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Live Tab (actual tournament progress)
+// ═══════════════════════════════════════════════════════════
+function LiveTab({ tour, liveStarted }) {
+  var phase = (tour && tour.phase) || "pre";
+  var groups = (tour && tour.groups) || {};
+  var ko = (tour && tour.ko) || {};
+  var lastUpd = tour && tour.last_api_update;
+  var stages = [
+    { k: "r32", l: "ベスト32" },
+    { k: "r16", l: "ベスト16" },
+    { k: "qf",  l: "準々決勝" },
+    { k: "sf",  l: "準決勝" },
+    { k: "final", l: "決勝進出" },
+  ];
+
+  return (
+    <div className="fade-in">
+      <Sec icon="📡" title="大会途中経過" sub={"現在のフェーズ: " + (PHASE_LABEL[phase] || phase) + (lastUpd ? "　/　最終更新: " + new Date(lastUpd).toLocaleString("ja-JP") : "")} />
+
+      {!liveStarted && (
+        <div style={{ padding: 40, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12, marginBottom: 20 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>⚽ まだ大会開幕前です</div>
+          <p style={{ fontSize: 12 }}>2026年6月11日キックオフ予定。試合が始まると、ここに結果が自動で反映されます。</p>
+        </div>
+      )}
+
+      {Object.keys(groups).length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 10 }}>📊 グループ星取表</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 10 }}>
+            {Object.keys(GRP).map(function (g) {
+              var rows = groups[g];
+              if (!rows || !rows.length) return null;
+              return (
+                <div key={g} style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, overflow: "hidden" }}>
+                  <div style={{ padding: "8px 12px", background: "rgba(245,197,24,.08)", borderBottom: "1px solid " + $.border, fontWeight: 700, color: $.gold, fontSize: 13 }}>グループ {g}</div>
+                  <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ color: $.dim }}>
+                        <th style={{ padding: "4px 8px", textAlign: "left" }}>チーム</th>
+                        <th style={{ padding: "4px 4px" }}>試</th>
+                        <th style={{ padding: "4px 4px" }}>勝</th>
+                        <th style={{ padding: "4px 4px" }}>分</th>
+                        <th style={{ padding: "4px 4px" }}>敗</th>
+                        <th style={{ padding: "4px 4px" }}>得失</th>
+                        <th style={{ padding: "4px 8px", color: $.gold }}>勝点</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(function (r, i) {
+                        var diff = (r.gf || 0) - (r.ga || 0);
+                        var qual = i < 2;
+                        return (
+                          <tr key={r.n + i} style={{ borderTop: "1px solid " + $.border, background: qual ? "rgba(34,197,94,.06)" : "transparent" }}>
+                            <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}><Fl n={r.n} s={12} />{r.n}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center", color: $.dim }}>{r.mp || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.w || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.d || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.l || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center", color: diff > 0 ? $.pitchL : diff < 0 ? $.redL : $.dim }}>{diff > 0 ? "+" : ""}{diff}</td>
+                            <td style={{ padding: "4px 8px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{r.pts || 0}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {liveStarted && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 10 }}>🏆 決勝トーナメント進行</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10 }}>
+            {stages.map(function (s) {
+              var teams = (ko && ko[s.k]) || [];
+              if (!teams.length) return null;
+              return (
+                <div key={s.k} style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, padding: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: $.gold, marginBottom: 6 }}>{s.l} 進出 ({teams.length})</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {teams.map(function (n) {
+                      return <span key={n} style={{ display: "inline-flex", alignItems: "center", padding: "3px 8px", background: "rgba(34,197,94,.12)", border: "1px solid " + $.pitchL + "40", borderRadius: 6, fontSize: 11 }}><Fl n={n} s={12} />{n}</span>;
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            {ko.champ && (
+              <div style={{ borderRadius: 10, border: "2px solid " + $.gold, background: "linear-gradient(135deg,rgba(245,197,24,.20),transparent)", padding: 12, boxShadow: $.glow }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: $.gold, marginBottom: 6 }}>👑 優勝</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 16, fontWeight: 700 }}><Fl n={ko.champ} s={20} />{ko.champ}</div>
+              </div>
+            )}
+            {ko.third && (
+              <div style={{ borderRadius: 10, border: "1px solid " + $.gold + "60", background: $.card, padding: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: $.gold, marginBottom: 6 }}>🥉 3位</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 700 }}><Fl n={ko.third} s={18} />{ko.third}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 24, padding: 14, fontSize: 11, color: $.dim, border: "1px dashed " + $.border, borderRadius: 8, lineHeight: 1.7 }}>
+        ※ 結果は管理者が手動入力するか、API経由で自動取得されます。<br />
+        ※ 実結果が反映されると、「みんなの予想」のスコアが自動で再計算されます。
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Section / Group Panel
+// ═══════════════════════════════════════════════════════════
+function Sec({ icon, title, sub }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <span style={{ fontSize: 18 }}>{icon}</span>
+        <div style={{ height: 1, flex: 1, background: "linear-gradient(90deg," + $.gold + "60,transparent)" }} />
+      </div>
+      <div style={{ fontFamily: fontH, fontSize: 22, letterSpacing: 5, color: $.gold, textShadow: "0 0 12px rgba(245,197,24,.25)" }}>{title}</div>
+      {sub && <div style={{ fontSize: 11, color: $.dim, marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function GroupPanel({ g, gl, rankTeam, des, close }) {
+  var ranks = gl[g] || [];
+  return (
+    <div className="fade-in" style={{ marginBottom: 16, borderRadius: 12, border: "1px solid " + $.gold + "55", background: "linear-gradient(135deg,rgba(245,197,24,.10),rgba(245,197,24,.02))", padding: 16, boxShadow: "0 0 30px rgba(245,197,24,.10)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontFamily: fontH, fontSize: 26, letterSpacing: 4, color: $.gold }}>GROUP {g}</span>
+        <button onClick={close} style={{ fontSize: 11, padding: "4px 12px", borderRadius: 4, background: "rgba(255,255,255,.06)", border: "1px solid " + $.border, cursor: "pointer", color: $.txt, fontFamily: fontH, letterSpacing: 2 }}>CLOSE</button>
+      </div>
+      <p style={{ fontSize: 11, color: $.txt2, marginBottom: 10, lineHeight: 1.6 }}>
+        チームを順番にクリック（1位→2位→3位→4位）。押すとやり直し。<br />
+        <span style={{ color: $.pitchL, fontWeight: 700 }}>● 1位・2位は必須</span>
+        <span style={{ color: $.dim, marginLeft: 10 }}>○ 3位・4位は任意（3位通過予想に使用）</span>
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {GRP[g].map(function (t) {
+          var pos = ranks.indexOf(t.n);
+          var isR = pos >= 0;
+          var isReq = pos === 0 || pos === 1; // 1位/2位 = 必須
+          var bk = des.A === t.n ? "A" : des.B === t.n ? "B" : des.C === t.n ? "C" : null;
+          var rankColor = isReq ? $.pitchL : $.dim;
+          var rankBg = isReq ? "rgba(34,197,94,.14)" : isR ? "rgba(255,255,255,.06)" : "rgba(255,255,255,.03)";
+          var rankBorder = isReq ? $.pitchL + "70" : isR ? $.dim + "70" : $.border;
+          return (
+            <div
+              key={t.n}
+              onClick={function () { rankTeam(g, t.n); }}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 8, cursor: "pointer", border: "1px solid " + rankBorder, background: rankBg, transition: "all .15s" }}
+            >
+              {isR && <span style={{ fontFamily: fontH, fontSize: 22, color: rankColor, width: 28, textAlign: "center" }}>{pos + 1}</span>}
+              <Fl n={t.n} s={24} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: isR ? 700 : 400 }}>{t.n}</div>
+                <div style={{ fontSize: 10, color: $.dim }}>x{bsc(t.o).toFixed(1)}</div>
+              </div>
+              {bk && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: DES[bk].bg, color: DES[bk].cl, fontWeight: 700 }}>{DES[bk].l}</span>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 10, fontSize: 11, display: "flex", flexWrap: "wrap", gap: 14 }}>
+        <span style={{ color: ranks[0] ? $.pitchL : $.redL, fontWeight: 700 }}>{ranks[0] ? "✓" : "●"} 1位: {ranks[0] || <span style={{ color: $.redL }}>未設定（必須）</span>}</span>
+        <span style={{ color: ranks[1] ? $.pitchL : $.redL, fontWeight: 700 }}>{ranks[1] ? "✓" : "●"} 2位: {ranks[1] || <span style={{ color: $.redL }}>未設定（必須）</span>}</span>
+        <span style={{ color: ranks[2] ? $.txt2 : $.dim }}>{ranks[2] ? "✓" : "○"} 3位: {ranks[2] || <span style={{ color: $.dim }}>任意</span>}</span>
+        <span style={{ color: ranks[3] ? $.txt2 : $.dim }}>{ranks[3] ? "✓" : "○"} 4位: {ranks[3] || <span style={{ color: $.dim }}>任意</span>}</span>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Bracket / Sub-components (unchanged behavior, light style polish)
+// ═══════════════════════════════════════════════════════════
+function BView({ leftRes, rightRes, leftD, rightD, ko, ctx }) {
+  try {
+    var koQf = ko.qf || [], koSf = ko.sf || [];
+    var lSfT = (leftD.qf || []).map(function (q) { if (!q) return null; var ts = [q.t1, q.t2].filter(function (x) { return x && x.n; }); return ts.find(function (t) { return koQf.indexOf(t.n) >= 0; }) || null; });
+    var rSfT = (rightD.qf || []).map(function (q) { if (!q) return null; var ts = [q.t1, q.t2].filter(function (x) { return x && x.n; }); return ts.find(function (t) { return koQf.indexOf(t.n) >= 0; }) || null; });
+    return (
+      <div style={{ overflowX: "auto", marginBottom: 12, padding: "8px 0" }}>
+        <div style={{ display: "flex", alignItems: "stretch", minHeight: 520, minWidth: 1060 }}>
+          <R32C ms={leftRes || []} ctx={ctx} /><CL n={4} d="R" /><SC items={leftD.r16 || []} stage="r16" ctx={ctx} /><CL n={2} d="R" /><SC items={leftD.qf || []} stage="qf" ctx={ctx} ac={$.gold} /><CL n={1} d="R" />
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", width: 105 }}><SfB teams={lSfT} ctx={ctx} label="SF1" /></div><CL n={1} d="R" />
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", width: 130, padding: "0 6px" }}><FB ko={ko} des={ctx.des} adv={ctx.adv} /></div><CL n={1} d="L" />
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", width: 105 }}><SfB teams={rSfT} ctx={ctx} label="SF2" /></div><CL n={1} d="L" />
+          <SC items={rightD.qf || []} stage="qf" ctx={ctx} ac={$.gold} /><CL n={2} d="L" /><SC items={rightD.r16 || []} stage="r16" ctx={ctx} /><CL n={4} d="L" /><R32C ms={rightRes || []} ctx={ctx} />
+        </div>
+      </div>
+    );
+  } catch (e) { return <div style={{ color: $.dim, padding: 20 }}>ブラケット表示エラー</div>; }
+}
+function R32C({ ms, ctx }) { return <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-around", width: 128, flexShrink: 0 }}>{(ms || []).map(function (m) { return <MM key={m.id} m={m} ctx={ctx} />; })}</div>; }
+function MM({ m, ctx }) {
+  var [o, setO] = useState(false);
+  var has3 = m.seeds ? m.seeds.find(function (s) { return s && s.startsWith("3("); }) : null;
+  return (
+    <div>
+      <div style={{ borderRadius: 6, overflow: "hidden", border: "1px solid " + $.border, background: $.card }}>
+        <TR t={m.teams[0]} stage="r32" ctx={ctx} seed={m.seeds[0]} />
+        <TR t={m.teams[1]} stage="r32" ctx={ctx} seed={m.seeds[1]} />
+      </div>
+      {has3 && (
+        <div>
+          <button onClick={function () { setO(!o); }} style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: $.purple + "20", border: "1px solid " + $.purple + "30", color: $.purpleL, cursor: "pointer", marginTop: 2 }}>3位{o ? "▲" : "▼"}</button>
+          {o && <TP3 seed={has3} gl={ctx.gl} tp={ctx.tp} pick3={ctx.pick3} />}
+        </div>
+      )}
+    </div>
+  );
+}
+function SC({ items, stage, ctx, ac }) { return <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-around", width: 105, flexShrink: 0 }}>{(items || []).map(function (item, i) { var ts = [item.t1, item.t2].filter(function (x) { return x && x.n; }); if (ts.length < 2) return <div key={i} style={{ border: "1px dashed " + $.dim + "40", borderRadius: 5, padding: "4px 6px", fontSize: 9, color: $.dim, textAlign: "center" }}>TBD</div>; return <div key={i} style={{ borderRadius: 6, overflow: "hidden", border: "1px solid " + (ac ? ac + "60" : $.border), background: $.card }}><TR t={item.t1} stage={stage} ctx={ctx} ac={ac} /><TR t={item.t2} stage={stage} ctx={ctx} ac={ac} /></div>; })}</div>; }
+function SfB({ teams, ctx, label }) { var t1 = (teams || [])[0] || null, t2 = (teams || [])[1] || null; if (!t1 && !t2) return <div style={{ border: "1px dashed " + $.dim + "40", borderRadius: 6, padding: 8, fontSize: 9, color: $.dim, textAlign: "center" }}>{label}<br />TBD</div>; return <div><div style={{ fontFamily: fontH, fontSize: 10, letterSpacing: 2, color: $.goldD, marginBottom: 2 }}>{label}</div><div style={{ borderRadius: 6, overflow: "hidden", border: "1px solid " + $.gold + "55", background: $.card }}>{t1 ? <TR t={t1} stage="sf" ctx={ctx} ac={$.gold} /> : <div style={{ padding: "3px 6px", fontSize: 9, color: $.dim, height: 22, borderBottom: "1px solid " + $.border }}>TBD</div>}{t2 ? <TR t={t2} stage="sf" ctx={ctx} ac={$.gold} /> : <div style={{ padding: "3px 6px", fontSize: 9, color: $.dim, height: 22 }}>TBD</div>}</div></div>; }
+function TR({ t, stage, ctx, seed, ac }) {
+  if (!t || t.tbd || !t.n) {
+    var lbl = seed ? (seed.startsWith("3(") ? "3位" : seed) : (t && t.n) || "TBD";
+    return (
+      <div onClick={function () { try { if (t && t.grp) ctx.setAg(t.grp); else if (seed && seed.length >= 2 && !seed.startsWith("3(")) ctx.setAg(seed[1]); } catch (e) { } }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "2px 6px", height: 22, borderBottom: "1px solid " + $.border, cursor: "pointer", color: $.dim, fontSize: 10 }}>
+        <span>{lbl}</span><span style={{ fontSize: 8, color: $.gold }}>設定</span>
+      </div>
+    );
+  }
+  var koArr = (ctx.ko && ctx.ko[stage]) || [];
+  var isAdv = koArr.indexOf(t.n) >= 0;
+  var dk = (ctx.des && ctx.des.A === t.n) ? "A" : (ctx.des && ctx.des.B === t.n) ? "B" : (ctx.des && ctx.des.C === t.n) ? "C" : null;
+  return (
+    <div onClick={function () { ctx.adv(stage, t.n); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 6px", height: 22, cursor: "pointer", background: isAdv ? (ac ? "linear-gradient(90deg," + $.gold + "20,transparent)" : "linear-gradient(90deg," + $.pitchL + "20,transparent)") : "transparent", borderBottom: "1px solid " + $.border, fontWeight: isAdv ? 700 : 400, fontSize: 10 }}>
+      <span style={{ color: isAdv ? $.pitchL : $.txt, display: "flex", alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
+        <Fl n={t.n} s={12} />{t.n}{t.is3 ? "③" : ""}
+      </span>
+      <span style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+        {dk && <span style={{ fontSize: 7, padding: "0 3px", borderRadius: 2, background: DES[dk].bg, color: DES[dk].cl, fontWeight: 700 }}>{dk}</span>}
+        {isAdv && <span style={{ color: ac || $.pitchL, fontSize: 9 }}>✓</span>}
+      </span>
+    </div>
+  );
+}
+function TP3({ seed, gl, tp, pick3 }) { var cands = get3c(seed, gl); var cur = (tp && tp[seed]) || null; return <div style={{ background: $.purple + "10", border: "1px solid " + $.purple + "25", borderRadius: 5, padding: 4, marginTop: 2 }}><div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>{cands.map(function (t) { return <button key={t.n + t.grp} onClick={function () { pick3(seed, t.n); }} style={{ fontSize: 8, padding: "2px 5px", borderRadius: 3, cursor: "pointer", background: cur === t.n ? $.purple : "rgba(255,255,255,.05)", border: "1px solid " + (cur === t.n ? $.purple : $.border), color: cur === t.n ? "#fff" : $.txt2 }}><Fl n={t.n} s={9} />{t.n}({t.grp})</button>; })}</div></div>; }
+function CL({ n, d }) { var isR = d === "R"; return <div style={{ display: "flex", flexDirection: "column", width: 14, flexShrink: 0 }}>{Array.from({ length: n }).map(function (_, i) { return <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column" }}><div style={Object.assign({ flex: 1, minHeight: 4, borderBottom: "1px solid " + $.gold + "40" }, isR ? { borderRight: "1px solid " + $.gold + "40" } : { borderLeft: "1px solid " + $.gold + "40" })} /><div style={Object.assign({ flex: 1, minHeight: 4, borderTop: "1px solid " + $.gold + "40" }, isR ? { borderRight: "1px solid " + $.gold + "40" } : { borderLeft: "1px solid " + $.gold + "40" })} /></div>; })}</div>; }
+function FB({ ko, des, adv }) {
+  var f1 = (ko.sf || []).length >= 1 ? ko.sf[0] : null, f2 = (ko.sf || []).length >= 2 ? ko.sf[1] : null;
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 4, color: $.gold, marginBottom: 4 }}>🏆 FINAL</div>
+      <div style={{ borderRadius: 10, overflow: "hidden", border: "2px solid " + $.gold, background: $.cardB, boxShadow: $.glow }}>
+        {f1 ? <FRw tn={f1} ko={ko} adv={adv} /> : <div style={{ padding: 4, fontSize: 9, color: $.dim, borderBottom: "1px solid " + $.border }}>SF1</div>}
+        {f2 ? <FRw tn={f2} ko={ko} adv={adv} /> : <div style={{ padding: 4, fontSize: 9, color: $.dim }}>SF2</div>}
+      </div>
+      {ko.final && ko.final.length >= 1 && (
+        <div style={{ marginTop: 6 }}>
+          <div style={{ fontFamily: fontH, fontSize: 10, letterSpacing: 3, color: $.gold }}>CHAMPION</div>
+          {ko.final.map(function (tn) {
+            return (
+              <div key={tn} onClick={function () { adv("champ", tn); }} style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 3, padding: "5px 8px", background: ko.champ === tn ? "linear-gradient(135deg," + $.gold + "30," + $.gold + "10)" : "rgba(255,255,255,.03)", border: "1px solid " + (ko.champ === tn ? $.gold : $.border), borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 700, marginTop: 3, boxShadow: ko.champ === tn ? $.glow : "none" }}>
+                <Fl n={tn} s={16} />{tn}{ko.champ === tn && " 👑"}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+function FRw({ tn, ko, adv }) { var isAdv = (ko.final || []).indexOf(tn) >= 0; return <div onClick={function () { adv("final", tn); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", cursor: "pointer", background: isAdv ? $.gold + "20" : "transparent", borderBottom: "1px solid " + $.border, fontSize: 10, fontWeight: isAdv ? 700 : 400 }}><span style={{ display: "flex", alignItems: "center" }}><Fl n={tn} s={13} />{tn}</span>{isAdv && <span style={{ color: $.pitchL, fontSize: 9 }}>✓</span>}</div>; }
+function ThirdP({ ko, adv }) { var sfL = (ko.qf || []).filter(function (tn) { return (ko.sf || []).indexOf(tn) < 0; }); if (sfL.length < 2) return null; return <div style={{ maxWidth: 280, marginBottom: 16 }}><div style={{ fontFamily: fontH, fontSize: 14, letterSpacing: 3, color: $.gold, marginBottom: 4 }}>🥉 THIRD PLACE</div><div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid " + $.gold + "40", background: $.card }}>{sfL.map(function (tn) { var isAdv = ko.third === tn; return <div key={tn} onClick={function () { adv("third", tn); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", cursor: "pointer", background: isAdv ? $.gold + "20" : "transparent", borderBottom: "1px solid " + $.border, fontSize: 12, fontWeight: isAdv ? 700 : 400 }}><span style={{ display: "flex", alignItems: "center" }}><Fl n={tn} s={16} />{tn}</span>{isAdv && <span>🥉</span>}</div>; })}</div></div>; }
+function BDown({ score }) { return <div style={{ borderRadius: 12, border: "1px solid " + $.border, background: $.card, padding: 16, marginTop: 12 }}><div style={{ fontFamily: fontH, fontSize: 16, letterSpacing: 3, color: $.gold, marginBottom: 10 }}>POINT BREAKDOWN</div>{score.bd.map(function (b, i) { return <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "5px 0", borderBottom: "1px solid " + $.border }}><span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}><Fl n={b.tn} s={14} />{b.tn}{b.dk && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: DES[b.dk].bg, color: DES[b.dk].cl, fontWeight: 700 }}>{DES[b.dk].l}</span>}</span><span style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: $.dim, fontSize: 10 }}>{b.stg.join(" → ")}</span><span style={{ fontFamily: fontH, fontSize: 16, color: $.pitchL }}>+{b.pts.toFixed(1)}</span></span></div>; })}<div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}><div style={{ fontFamily: fontH, fontSize: 28, color: $.gold, textShadow: "0 0 30px rgba(245,197,24,.4)" }}>TOTAL: {score.total.toFixed(1)}</div></div></div>; }
+
+// ═══════════════════════════════════════════════════════════
+// Global styles
+// ═══════════════════════════════════════════════════════════
+function Styles() {
+  return (
+    <style dangerouslySetInnerHTML={{ __html: `
+      @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&family=Noto+Sans+JP:wght@400;700&display=swap');
+      *{box-sizing:border-box;margin:0;padding:0}
+      ::-webkit-scrollbar{width:6px;height:6px}
+      ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
+      @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+      @keyframes pulse{0%,100%{transform:scale(1);box-shadow:0 0 24px rgba(245,197,24,.45)}50%{transform:scale(1.04);box-shadow:0 0 36px rgba(245,197,24,.7)}}
+      @keyframes pulseGlow{0%,100%{text-shadow:0 0 20px rgba(245,197,24,.5)}50%{text-shadow:0 0 36px rgba(245,197,24,.85)}}
+      .fade-in{animation:fadeUp .5s ease both}
+      .pulse-glow{animation:pulseGlow 2.5s ease-in-out infinite}
+      .qv-card:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+      .qv-chip:hover{transform:translateY(-1px);filter:brightness(1.15)}
+    ` }} />
+  );
+}

@@ -1,0 +1,165 @@
+name: Update Match Results
+
+on:
+  schedule:
+    # 大会期間中（2026年6月-7月）2時間ごと
+    - cron: '0 */2 * 6-7 *'
+  workflow_dispatch: # 手動実行も可
+
+jobs:
+  update-results:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and update results
+        env:
+          APISPORTS_KEY: ${{ secrets.APISPORTS_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cat << 'SCRIPT' > update.mjs
+          /**
+           * FIFA W杯2026 結果取得 (API-Football / api-sports.io 直接)
+           * 無料tier: 100req/日 → 2時間ごとでも12req/日で余裕
+           *
+           * 必要な GitHub Secrets:
+           *   APISPORTS_KEY        … https://dashboard.api-football.com/register で登録して取得
+           *   SUPABASE_URL         … https://xxx.supabase.co
+           *   SUPABASE_SERVICE_KEY … service_role の JWT（anon ではない！）
+           */
+
+          // FIFA World Cup の league.id = 1
+          const LEAGUE_ID = 1;
+          const SEASON = 2026;
+          const API_BASE = 'https://v3.football.api-sports.io';
+
+          async function api(path) {
+            const res = await fetch(`${API_BASE}${path}`, {
+              headers: {
+                'x-apisports-key': process.env.APISPORTS_KEY,
+              },
+            });
+            if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0,200)}`);
+            return res.json();
+          }
+
+          async function patchSupabase(table, idCol, idVal, data) {
+            const res = await fetch(
+              `${process.env.SUPABASE_URL}/rest/v1/${table}?${idCol}=eq.${idVal}`,
+              {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': process.env.SUPABASE_SERVICE_KEY,
+                  'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+                  'Prefer': 'return=minimal',
+                },
+                body: JSON.stringify(data),
+              }
+            );
+            if (!res.ok) throw new Error(`Supabase: ${(await res.text()).slice(0,200)}`);
+          }
+
+          // 英→日 名前マップ
+          const NM = {
+            'Mexico':'メキシコ','South Africa':'南アフリカ','Korea Republic':'韓国','South Korea':'韓国',
+            'Czech Republic':'チェコ','Czechia':'チェコ',
+            'Canada':'カナダ','Bosnia and Herzegovina':'ボスニア','Bosnia & Herzegovina':'ボスニア',
+            'Qatar':'カタール','Switzerland':'スイス',
+            'Brazil':'ブラジル','Morocco':'モロッコ','Haiti':'ハイチ','Scotland':'スコットランド',
+            'United States':'アメリカ','USA':'アメリカ','Paraguay':'パラグアイ',
+            'Australia':'オーストラリア','Turkey':'トルコ','Türkiye':'トルコ','Turkiye':'トルコ',
+            'Germany':'ドイツ','Curaçao':'キュラソー','Curacao':'キュラソー',
+            'Ivory Coast':'コートジボワール',"Côte d'Ivoire":'コートジボワール',
+            'Ecuador':'エクアドル',
+            'Netherlands':'オランダ','Japan':'日本','Sweden':'スウェーデン','Tunisia':'チュニジア',
+            'Belgium':'ベルギー','Egypt':'エジプト','Iran':'イラン','IR Iran':'イラン',
+            'New Zealand':'ニュージーランド',
+            'Spain':'スペイン','Cape Verde':'カーボベルデ','Cabo Verde':'カーボベルデ',
+            'Saudi Arabia':'サウジアラビア','Uruguay':'ウルグアイ',
+            'France':'フランス','Senegal':'セネガル','Iraq':'イラク','Norway':'ノルウェー',
+            'Argentina':'アルゼンチン','Algeria':'アルジェリア','Austria':'オーストリア','Jordan':'ヨルダン',
+            'Portugal':'ポルトガル','DR Congo':'DRコンゴ','Congo DR':'DRコンゴ',
+            'Uzbekistan':'ウズベキスタン','Colombia':'コロンビア',
+            'England':'イングランド','Croatia':'クロアチア','Ghana':'ガーナ','Panama':'パナマ',
+          };
+          const ja = (s) => NM[s] || s;
+
+          // KOステージ → 内部キー
+          const STAGE = {
+            'Round of 32': 'r32', '1/16 Finals': 'r32', 'Round of 16': 'r16', '1/8 Finals': 'r16',
+            'Quarter-finals': 'qf', 'Quarterfinals': 'qf',
+            'Semi-finals': 'sf', 'Semifinals': 'sf',
+            '3rd Place Final': 'third', 'Third Place': 'third',
+            'Final': 'final',
+          };
+
+          async function main() {
+            if (!process.env.APISPORTS_KEY || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+              console.log('Secrets not set, skipping.');
+              return;
+            }
+
+            // ── 1) グループ星取表 ──
+            console.log('Fetching standings...');
+            let groups = {};
+            let phase = 'pre';
+            try {
+              const data = await api(`/standings?league=${LEAGUE_ID}&season=${SEASON}`);
+              const arr = data.response?.[0]?.league?.standings || [];
+              arr.forEach((tbl, i) => {
+                const letter = String.fromCharCode(65 + i); // A..L
+                groups[letter] = tbl.map((row) => ({
+                  n: ja(row.team.name),
+                  mp: row.all.played, w: row.all.win, d: row.all.draw, l: row.all.lose,
+                  gf: row.all.goals.for, ga: row.all.goals.against, pts: row.points,
+                }));
+              });
+              if (Object.keys(groups).length > 0) phase = 'groups';
+            } catch (e) { console.warn('standings fail:', e.message); }
+
+            // ── 2) 試合結果 ──
+            console.log('Fetching fixtures...');
+            const ko = { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
+            try {
+              const data = await api(`/fixtures?league=${LEAGUE_ID}&season=${SEASON}&status=FT`);
+              const fxs = data.response || [];
+              fxs.forEach((f) => {
+                const round = f.league.round || '';
+                let stage = null;
+                for (const k of Object.keys(STAGE)) {
+                  if (round.toLowerCase().includes(k.toLowerCase())) { stage = STAGE[k]; break; }
+                }
+                if (!stage) return;
+                const home = f.teams.home, away = f.teams.away;
+                const winner = home.winner ? home : away.winner ? away : null;
+                if (!winner) return;
+                const wn = ja(winner.name);
+                if (stage === 'third') { ko.third = wn; return; }
+                if (stage === 'final') {
+                  if (!ko.final.includes(ja(home.name))) ko.final.push(ja(home.name));
+                  if (!ko.final.includes(ja(away.name))) ko.final.push(ja(away.name));
+                  ko.champ = wn;
+                  return;
+                }
+                if (!ko[stage].includes(wn)) ko[stage].push(wn);
+              });
+              if (ko.champ) phase = 'done';
+              else if (ko.final.length > 0) phase = 'final';
+              else if (ko.sf.length > 0) phase = 'sf';
+              else if (ko.qf.length > 0) phase = 'qf';
+              else if (ko.r16.length > 0) phase = 'r16';
+              else if (ko.r32.length > 0) phase = 'r32';
+            } catch (e) { console.warn('fixtures fail:', e.message); }
+
+            console.log('phase:', phase, '/ groups:', Object.keys(groups).length, '/ ko:', JSON.stringify(ko).slice(0, 240));
+
+            await patchSupabase('tournament', 'id', 'wc2026', {
+              phase, groups, ko, last_api_update: new Date().toISOString(),
+            });
+            console.log('✅ Supabase updated.');
+          }
+
+          main().catch((e) => { console.error('❌', e); process.exit(1); });
+          SCRIPT
+
+          node update.mjs
