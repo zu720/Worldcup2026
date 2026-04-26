@@ -141,6 +141,33 @@ function calcScore(gl, des, ko, groups) {
 }
 function deriveRounds(r32,ko){var empty={r16:[{t1:null,t2:null},{t1:null,t2:null},{t1:null,t2:null},{t1:null,t2:null}],qf:[{t1:null,t2:null},{t1:null,t2:null}]};try{if(!r32||r32.length<8||!ko)return empty;var r16=[];var koR32=ko.r32||[];for(var i=0;i<8;i+=2){var m1=r32[i],m2=r32[i+1];var t1s=(m1&&m1.teams||[]).filter(function(t){return t&&t.n&&!t.tbd;});var t2s=(m2&&m2.teams||[]).filter(function(t){return t&&t.n&&!t.tbd;});r16.push({t1:t1s.find(function(t){return koR32.indexOf(t.n)>=0;})||null,t2:t2s.find(function(t){return koR32.indexOf(t.n)>=0;})||null});}var qf=[];var koR16=ko.r16||[];for(var j=0;j<4;j+=2){var a=[r16[j].t1,r16[j].t2].filter(function(x){return x&&x.n;});var b=[r16[j+1].t1,r16[j+1].t2].filter(function(x){return x&&x.n;});qf.push({t1:a.find(function(t){return koR16.indexOf(t.n)>=0;})||null,t2:b.find(function(t){return koR16.indexOf(t.n)>=0;})||null});}return{r16:r16,qf:qf};}catch(e){return empty;}}
 
+// 実大会データ → ブラケット表示用 gl/tp を派生
+function deriveGlFromTour(groups) {
+  var gl = {};
+  Object.keys(GRP).forEach(function (g) {
+    var arr = groups && groups[g];
+    if (arr && arr.length > 0) gl[g] = arr.map(function (r) { return r.n; });
+  });
+  return gl;
+}
+function deriveTpFromTour(ko, groups) {
+  var tp = {};
+  var r32 = (ko && ko.r32) || [];
+  var allSeeds = [].concat(LR32.flatMap(function (m) { return m.s; }), RR32.flatMap(function (m) { return m.s; })).filter(function (s) { return s && s.startsWith("3("); });
+  var used = {};
+  allSeeds.forEach(function (seed) {
+    var cands = seed.match(/[A-L]/g) || [];
+    for (var i = 0; i < cands.length; i++) {
+      var stand = groups && groups[cands[i]];
+      if (stand && stand.length >= 3) {
+        var third = stand[2].n;
+        if (r32.indexOf(third) >= 0 && !used[third]) { tp[seed] = third; used[third] = true; break; }
+      }
+    }
+  });
+  return tp;
+}
+
 function shuffle(arr){var a=arr.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=a[i];a[i]=a[j];a[j]=tmp;}return a;}
 function generateRandom(mode){var gl2={};Object.keys(GRP).forEach(function(g){var teams=GRP[g].slice();teams.sort(function(a,b){return a.o-b.o;});if(mode==="safe"){var second=shuffle(teams.slice(1,3))[0];gl2[g]=[teams[0].n,second.n];}else if(mode==="upset"){var weak=shuffle(teams.slice(1));gl2[g]=[weak[0].n,weak[1].n];}else{var rest=shuffle(teams.slice(1));gl2[g]=[teams[0].n,rest[0].n];}});var pool=[];Object.values(gl2).forEach(function(a){a.forEach(function(n){var t=ft(n);if(t)pool.push(t);});});var des2={A:null,B:null,C:null};if(pool.length>=3){pool.sort(function(a,b){return a.o-b.o;});var n=pool.length,picks;if(mode==="upset"){var hi=pool.slice(Math.floor(n/2));picks=shuffle(hi).slice(0,3);}else if(mode==="safe"){var lo=pool.slice(0,Math.max(6,Math.ceil(n/2)));picks=shuffle(lo).slice(0,3);}else{picks=shuffle(pool).slice(0,3);}des2.A=(picks[0]||{}).n||null;des2.B=(picks[1]||{}).n||null;des2.C=(picks[2]||{}).n||null;}return{gl:gl2,des:des2};}
 
@@ -696,6 +723,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
 
   var rows = useMemo(function () {
     var actualR32 = (liveStarted && tour && tour.ko && tour.ko.r32) || [];
+    var hasGroupsData = Object.values(groupsForScore).some(function (arr) { return arr && arr.length > 0; });
     return list.map(function (p) {
       var sc = (function () {
         try { return calcScore(p.gl || {}, p.des || {}, koForScore, groupsForScore); }
@@ -705,7 +733,23 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
       var picks = [];
       Object.values(p.gl || {}).forEach(function (arr) { (arr || []).slice(0, 2).forEach(function (n) { if (n) picks.push(n); }); });
       var hits = actualR32.length ? picks.filter(function (n) { return actualR32.indexOf(n) >= 0; }).length : null;
-      return { name: p.name, gl: p.gl || {}, des: p.des || {}, tp: p.tp || {}, score: sc, hits: hits, total: picks.length, updated_at: p.updated_at };
+      // 順位的中数（1位・2位）
+      var hits1 = 0, hits2 = 0, total1 = 0, total2 = 0;
+      Object.entries(p.gl || {}).forEach(function (e) {
+        var g = e[0], arr = e[1] || [];
+        if (arr[0]) total1++;
+        if (arr[1]) total2++;
+        var stand = groupsForScore[g];
+        if (!stand || stand.length === 0) return;
+        if (arr[0] && stand[0] && stand[0].n === arr[0]) hits1++;
+        if (arr[1] && stand[1] && stand[1].n === arr[1]) hits2++;
+      });
+      return {
+        name: p.name, gl: p.gl || {}, des: p.des || {}, tp: p.tp || {}, score: sc, updated_at: p.updated_at,
+        hits: hits, total: picks.length,
+        rank1: hasGroupsData ? hits1 : null, rank1Total: 12,
+        rank2: hasGroupsData ? hits2 : null, rank2Total: 12,
+      };
     }).sort(function (a, b) { return b.score.total - a.score.total; });
   }, [list, koForScore, groupsForScore, liveStarted, tour]);
 
@@ -1070,13 +1114,17 @@ function LiveTab({ tour, liveStarted }) {
   var groups = (tour && tour.groups) || {};
   var ko = (tour && tour.ko) || {};
   var lastUpd = tour && tour.last_api_update;
-  var stages = [
-    { k: "r32", l: "ベスト32" },
-    { k: "r16", l: "ベスト16" },
-    { k: "qf",  l: "準々決勝" },
-    { k: "sf",  l: "準決勝" },
-    { k: "final", l: "決勝進出" },
-  ];
+
+  // 実データからブラケット表示用に派生
+  var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
+  var liveTp = useMemo(function () { return deriveTpFromTour(ko, groups); }, [ko, groups]);
+  var liveLeftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
+  var liveRightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
+  var liveLeftD = useMemo(function () { return deriveRounds(liveLeftRes, ko); }, [liveLeftRes, ko]);
+  var liveRightD = useMemo(function () { return deriveRounds(liveRightRes, ko); }, [liveRightRes, ko]);
+  // 読み取り専用 ctx（クリック無効）
+  var noop = function () {};
+  var liveCtx = { ko: ko, des: { A: null, B: null, C: null }, adv: noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop };
 
   return (
     <div className="fade-in">
@@ -1139,34 +1187,8 @@ function LiveTab({ tour, liveStarted }) {
       {liveStarted && (
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 10 }}>🏆 決勝トーナメント進行</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 10 }}>
-            {stages.map(function (s) {
-              var teams = (ko && ko[s.k]) || [];
-              if (!teams.length) return null;
-              return (
-                <div key={s.k} style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, padding: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: $.gold, marginBottom: 6 }}>{s.l} 進出 ({teams.length})</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {teams.map(function (n) {
-                      return <span key={n} style={{ display: "inline-flex", alignItems: "center", padding: "3px 8px", background: "rgba(34,197,94,.12)", border: "1px solid " + $.pitchL + "40", borderRadius: 6, fontSize: 11 }}><Fl n={n} s={12} />{n}</span>;
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-            {ko.champ && (
-              <div style={{ borderRadius: 10, border: "2px solid " + $.gold, background: "linear-gradient(135deg,rgba(245,197,24,.20),transparent)", padding: 12, boxShadow: $.glow }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: $.gold, marginBottom: 6 }}>👑 優勝</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 16, fontWeight: 700 }}><Fl n={ko.champ} s={20} />{ko.champ}</div>
-              </div>
-            )}
-            {ko.third && (
-              <div style={{ borderRadius: 10, border: "1px solid " + $.gold + "60", background: $.card, padding: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: $.gold, marginBottom: 6 }}>🥉 3位</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 700 }}><Fl n={ko.third} s={18} />{ko.third}</div>
-              </div>
-            )}
-          </div>
+          <BView leftRes={liveLeftRes} rightRes={liveRightRes} leftD={liveLeftD} rightD={liveRightD} ko={ko} ctx={liveCtx} />
+          {ko.sf && ko.sf.length >= 2 && <ThirdP ko={ko} adv={noop} />}
         </div>
       )}
 
