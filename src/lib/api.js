@@ -67,6 +67,35 @@ export async function getPredictionByName(name) {
   return all.find((p) => p.name === name.trim()) || null;
 }
 
+export async function deletePrediction(name) {
+  if (!name) return false;
+  const t = name.trim();
+  if (hasSupabase) {
+    const { error } = await supabase.from('predictions').delete().eq('name', t);
+    if (error) throw error;
+    return true;
+  }
+  const all = lsLoad(LS_PRED_KEY, []);
+  const next = all.filter((p) => p.name !== t);
+  lsSave(LS_PRED_KEY, next);
+  return true;
+}
+
+export async function updatePredictionRaw(name, patch) {
+  if (!name) return false;
+  const t = name.trim();
+  if (hasSupabase) {
+    const { error } = await supabase.from('predictions').update(patch).eq('name', t);
+    if (error) throw error;
+    return true;
+  }
+  const all = lsLoad(LS_PRED_KEY, []);
+  const i = all.findIndex((p) => p.name === t);
+  if (i >= 0) all[i] = { ...all[i], ...patch, updated_at: new Date().toISOString() };
+  lsSave(LS_PRED_KEY, all);
+  return true;
+}
+
 export async function getAllPredictions() {
   if (hasSupabase) {
     const { data, error } = await supabase

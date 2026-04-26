@@ -4,6 +4,8 @@ import {
   getPredictionByName,
   getAllPredictions,
   subscribePredictions,
+  deletePrediction,
+  updatePredictionRaw,
   getTournament,
   saveTournament,
   subscribeTournament,
@@ -118,7 +120,7 @@ export default function App() {
   var [adminOpen, setAdminOpen] = useState(false);
 
   var gk = Object.keys(GRP);
-  var allSorted = useMemo(function () { return AT.slice().sort(function (a, b) { return a.n.localeCompare(b.n, "ja"); }); }, []);
+  var allSorted = useMemo(function () { return AT.slice().sort(function (a, b) { return a.o - b.o; }); }, []); // 優勝オッズ昇順（本命→大穴）
   var glComplete = useMemo(function () { return gk.every(function (g) { return (gl[g] || []).length >= 2; }); }, [gl, gk]);
   // 実結果が空ならシミュレーション用の自分のkoを、開始後は実結果を使う
   var liveStarted = useMemo(function () {
@@ -275,9 +277,8 @@ function Gate({ nm, setNm, enter, loading, err }) {
         <div className="fade-in" style={{ width: "100%", maxWidth: 460, position: "relative", zIndex: 2 }}>
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 76, height: 76, borderRadius: 16, background: "linear-gradient(135deg," + $.gold + "," + $.goldD + ")", boxShadow: $.glow, fontSize: 38, marginBottom: 14, animation: "pulse 3s ease-in-out infinite" }}>⚽</div>
-            <div style={{ fontFamily: fontH, fontSize: 11, letterSpacing: 8, color: $.gold, marginBottom: 4 }}>PREDICTION GAME</div>
+            <div style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 3, color: $.gold, marginBottom: 4 }}>Road to 三幸園</div>
             <div style={{ fontFamily: fontH, fontSize: 30, letterSpacing: 3 }}>FIFA WORLD CUP 2026</div>
-            <div style={{ fontSize: 12, color: $.txt2, marginTop: 4, letterSpacing: 2 }}>〜 Road to 三幸園 〜</div>
           </div>
           <div style={{ background: "linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02))", border: "1px solid " + $.border, borderRadius: 16, padding: 28, backdropFilter: "blur(8px)", boxShadow: "0 20px 60px rgba(0,0,0,.4)" }}>
             <div style={{ fontFamily: fontH, fontSize: 12, letterSpacing: 4, color: $.gold, marginBottom: 6 }}>YOUR NAME</div>
@@ -322,7 +323,7 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin }) {
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg," + $.gold + "," + $.goldD + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, boxShadow: $.glow }}>⚽</div>
           <div>
-            <div style={{ fontFamily: fontH, fontSize: 10, letterSpacing: 6, color: $.gold }}>PREDICTION GAME</div>
+            <div style={{ fontFamily: fontH, fontSize: 11, letterSpacing: 2, color: $.gold }}>Road to 三幸園</div>
             <div style={{ fontFamily: fontH, fontSize: 20, letterSpacing: 2 }}>FIFA WORLD CUP 2026</div>
           </div>
         </div>
@@ -427,7 +428,7 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
                         <Fl n={t.n} s={14} />{t.n}
                       </span>
                       <span style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                        <span style={{ fontSize: 11, color: $.gold, fontFamily: fontH, fontWeight: 700, minWidth: 42, textAlign: "right" }} title="基礎点（オッズ調整後）">x{b.toFixed(1)}</span>
+                        <span style={{ fontSize: 14, color: $.gold, fontFamily: fontH, fontWeight: 700, minWidth: 50, textAlign: "right", letterSpacing: 1 }} title="基礎点（オッズ調整後）">x{b.toFixed(1)}</span>
                         {isO && <span style={{ fontSize: 9, color: DES[ub].cl }}>{ub}</span>}
                         {isThis && <span style={{ color: cfg.cl }}>✓</span>}
                       </span>
@@ -441,20 +442,87 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
       </div>
 
       {/* GROUP STAGE */}
-      {ag && <GroupPanel g={ag} gl={gl} rankTeam={rankTeam} des={des} close={function () { setAg(null); }} />}
-      <Sec icon="🏟️" title="グループステージ予想" sub="各グループの順位を設定（1位→2位→3位→4位の順にクリック）" />
-      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+      <Sec icon="🏟️" title="グループステージ予想" sub="各グループのカードをクリックして展開 → 順番にチームクリック（1位→2位→3位→4位）" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 10, marginBottom: 28 }}>
         {gk.map(function (g) {
-          var done = (gl[g] || []).length >= 2;
-          var act = ag === g;
+          var ranks = gl[g] || [];
+          var done = ranks.length >= 2;
+          var isOpen = ag === g;
           return (
-            <button
+            <div
               key={g}
-              onClick={function () { setAg(act ? null : g); }}
-              style={{ fontFamily: fontH, fontSize: 17, letterSpacing: 2, padding: "8px 16px", borderRadius: 8, cursor: "pointer", border: "1px solid " + (act ? $.gold : done ? $.pitchL + "60" : $.border), background: act ? "rgba(245,197,24,.18)" : done ? "rgba(34,197,94,.10)" : "rgba(255,255,255,.02)", color: act ? $.gold : done ? $.pitchL : $.dim, transition: "all .15s", boxShadow: act ? $.glowS : "none" }}
+              style={{
+                borderRadius: 12,
+                border: "1px solid " + (isOpen ? $.gold + "80" : done ? $.pitchL + "55" : $.border),
+                background: isOpen
+                  ? "linear-gradient(135deg,rgba(251,191,36,.14),rgba(251,191,36,.02))"
+                  : done
+                  ? "linear-gradient(135deg,rgba(52,211,153,.10),rgba(255,255,255,.04))"
+                  : $.card,
+                overflow: "hidden",
+                transition: "all .2s",
+                boxShadow: isOpen ? $.glowS : "none",
+              }}
             >
-              {g}{done ? " ✓" : ""}
-            </button>
+              <div
+                onClick={function () { setAg(isOpen ? null : g); }}
+                style={{ padding: "10px 14px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontFamily: fontH, fontSize: 22, letterSpacing: 2, color: isOpen ? $.gold : done ? $.pitchL : $.txt }}>{g}</span>
+                    {done && <span style={{ color: $.pitchL, fontSize: 13 }}>✓</span>}
+                  </div>
+                  {!isOpen && (
+                    <div style={{ fontSize: 11, color: $.txt2, marginTop: 3, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                        <span style={{ fontFamily: fontH, fontSize: 11, color: $.gold, marginRight: 1 }}>1</span>
+                        {ranks[0] ? <><Fl n={ranks[0]} s={12} />{ranks[0]}</> : <span style={{ color: $.dim }}>未設定</span>}
+                      </span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                        <span style={{ fontFamily: fontH, fontSize: 11, color: $.gold, marginRight: 1 }}>2</span>
+                        {ranks[1] ? <><Fl n={ranks[1]} s={12} />{ranks[1]}</> : <span style={{ color: $.dim }}>未設定</span>}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <span style={{ color: $.dim, fontSize: 13, marginLeft: 6 }}>{isOpen ? "▲" : "▼"}</span>
+              </div>
+              {isOpen && (
+                <div style={{ padding: "8px 12px 12px", borderTop: "1px solid " + $.border }}>
+                  <div style={{ fontSize: 10, color: $.txt2, marginBottom: 8, lineHeight: 1.5 }}>
+                    順番にクリック → 押すとやり直し。<br />
+                    <span style={{ color: $.pitchL, fontWeight: 700 }}>● 1位・2位は必須</span>　<span style={{ color: $.dim }}>○ 3位・4位は任意</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {GRP[g].map(function (t) {
+                      var pos = ranks.indexOf(t.n);
+                      var isR = pos >= 0;
+                      var isReq = pos === 0 || pos === 1;
+                      var bk = des.A === t.n ? "A" : des.B === t.n ? "B" : des.C === t.n ? "C" : null;
+                      var rankColor = isReq ? $.pitchL : isR ? $.txt2 : $.dim;
+                      var rankBg = isReq ? "rgba(52,211,153,.16)" : isR ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.04)";
+                      var rankBorder = isReq ? $.pitchL + "70" : isR ? "rgba(255,255,255,.20)" : $.border;
+                      return (
+                        <div
+                          key={t.n}
+                          onClick={function () { rankTeam(g, t.n); }}
+                          style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 6, cursor: "pointer", border: "1px solid " + rankBorder, background: rankBg, transition: "all .15s" }}
+                        >
+                          <span style={{ fontFamily: fontH, fontSize: 16, color: rankColor, width: 18, textAlign: "center" }}>{isR ? pos + 1 : "—"}</span>
+                          <Fl n={t.n} s={20} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: isR ? 700 : 400 }}>{t.n}</div>
+                            <div style={{ fontSize: 10, color: $.dim }}>x{bsc(t.o).toFixed(1)}</div>
+                          </div>
+                          {bk && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: DES[bk].bg, color: DES[bk].cl, fontWeight: 700 }}>{DES[bk].l}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -482,17 +550,17 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
 // Save Bar (sticky bottom)
 // ═══════════════════════════════════════════════════════════
 function SaveBar({ saveStatus, savedAt, saveNow, glComplete, score }) {
-  var label = "💾 予想を保存する";
+  var label = "🗳 予想を投票する";
   var bg = "linear-gradient(135deg," + $.gold + "," + $.goldD + ")";
   var fg = "#000";
-  if (saveStatus === "saving") { label = "保存中..."; }
-  else if (saveStatus === "saved") { label = "✓ 保存しました"; bg = "linear-gradient(135deg," + $.pitchL + "," + $.pitch + ")"; fg = "#fff"; }
+  if (saveStatus === "saving") { label = "投票中..."; }
+  else if (saveStatus === "saved") { label = "✓ 投票しました"; bg = "linear-gradient(135deg," + $.pitchL + "," + $.pitch + ")"; fg = "#fff"; }
   else if (saveStatus === "error") { label = "⚠ エラー（もう一度押す）"; bg = "linear-gradient(135deg," + $.red + "," + $.redL + ")"; fg = "#fff"; }
   return (
     <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "linear-gradient(180deg,rgba(5,7,13,.0),rgba(5,7,13,.92) 30%)", padding: "20px 16px", zIndex: 90, pointerEvents: "none" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, pointerEvents: "auto" }}>
         <div style={{ fontSize: 11, color: $.dim, letterSpacing: 1 }}>
-          {savedAt ? <span>✓ 最終保存: {savedAt.toLocaleTimeString("ja-JP")}</span> : <span>{glComplete ? "予想完了！保存できます" : "12グループすべて設定すると保存できます"}</span>}
+          {savedAt ? <span>✓ 最終投票: {savedAt.toLocaleTimeString("ja-JP")}</span> : <span>{glComplete ? "予想完了！投票できます" : "12グループすべて設定すると投票できます"}</span>}
           {score && <span style={{ marginLeft: 12, color: $.gold, fontFamily: fontH, letterSpacing: 2 }}>得点 {score.total.toFixed(1)}</span>}
         </div>
         <button
@@ -784,8 +852,116 @@ function AdminPanel({ tour, setTour, close }) {
               <div style={{ fontSize: 12, color: msg.startsWith("✓") ? $.pitchL : msg ? $.redL : $.dim }}>{msg || "変更後は保存ボタンを押してください"}</div>
               <button onClick={save} disabled={saving} style={{ padding: "10px 24px", border: "none", borderRadius: 8, background: $.gold, color: "#000", fontWeight: 700, cursor: saving ? "default" : "pointer", opacity: saving ? .6 : 1 }}>{saving ? "保存中..." : "💾 実結果を保存"}</button>
             </div>
+
+            {/* Member predictions management */}
+            <AdminMembers />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Admin: Members (edit/delete other people's predictions)
+// ═══════════════════════════════════════════════════════════
+function AdminMembers() {
+  var [list, setList] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [err, setErr] = useState("");
+  var [editingName, setEditingName] = useState(null);
+  var [editText, setEditText] = useState("");
+  var [editMsg, setEditMsg] = useState("");
+  var [confirmDel, setConfirmDel] = useState(null);
+
+  function reload() {
+    setLoading(true);
+    getAllPredictions()
+      .then(function (d) { setList(d || []); setLoading(false); setErr(""); })
+      .catch(function (e) { setErr(e.message || String(e)); setLoading(false); });
+  }
+  useEffect(function () { reload(); }, []);
+
+  function startEdit(p) {
+    setEditingName(p.name);
+    setEditText(JSON.stringify({ gl: p.gl || {}, des: p.des || {}, tp: p.tp || {} }, null, 2));
+    setEditMsg("");
+  }
+  async function saveEdit() {
+    try {
+      var parsed = JSON.parse(editText);
+      await updatePredictionRaw(editingName, parsed);
+      setEditMsg("✓ 更新しました");
+      setTimeout(function () { setEditingName(null); reload(); }, 800);
+    } catch (e) {
+      setEditMsg("✕ " + (e.message || e));
+    }
+  }
+  async function doDelete(nm) {
+    try {
+      await deletePrediction(nm);
+      setConfirmDel(null);
+      reload();
+    } catch (e) {
+      setErr(e.message || String(e));
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 18, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
+      <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>👥 メンバー予想管理</span>
+        <button onClick={reload} style={{ background: "transparent", border: "1px solid " + $.border, color: $.txt2, fontSize: 11, padding: "3px 10px", borderRadius: 5, cursor: "pointer" }}>↻ 再読込</button>
+      </div>
+      {loading && <div style={{ fontSize: 11, color: $.dim }}>読込中...</div>}
+      {err && <div style={{ fontSize: 11, color: $.redL }}>エラー: {err}</div>}
+      {!loading && list.length === 0 && <div style={{ fontSize: 11, color: $.dim }}>予想がまだありません</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {list.map(function (p) {
+          var isEdit = editingName === p.name;
+          var isConfirm = confirmDel === p.name;
+          return (
+            <div key={p.name} style={{ borderRadius: 6, border: "1px solid " + (isEdit || isConfirm ? $.gold + "60" : $.border), background: "rgba(255,255,255,.02)", overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{p.name}</div>
+                  <div style={{ fontSize: 10, color: $.dim }}>更新: {p.updated_at ? new Date(p.updated_at).toLocaleString("ja-JP") : "—"}　1推し:{(p.des && p.des.A) || "—"} 2推し:{(p.des && p.des.B) || "—"} 3推し:{(p.des && p.des.C) || "—"}</div>
+                </div>
+                {!isEdit && !isConfirm && (
+                  <>
+                    <button onClick={function () { startEdit(p); }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 5, border: "1px solid " + $.border, background: "transparent", color: $.txt2, cursor: "pointer" }}>編集</button>
+                    <button onClick={function () { setConfirmDel(p.name); }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 5, border: "1px solid " + $.red, background: "transparent", color: $.redL, cursor: "pointer" }}>削除</button>
+                  </>
+                )}
+                {isConfirm && (
+                  <>
+                    <span style={{ fontSize: 11, color: $.redL }}>本当に削除？</span>
+                    <button onClick={function () { doDelete(p.name); }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 5, border: "none", background: $.red, color: "#fff", cursor: "pointer", fontWeight: 700 }}>削除する</button>
+                    <button onClick={function () { setConfirmDel(null); }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 5, border: "1px solid " + $.border, background: "transparent", color: $.txt2, cursor: "pointer" }}>取消</button>
+                  </>
+                )}
+              </div>
+              {isEdit && (
+                <div style={{ padding: 10, borderTop: "1px solid " + $.border, background: "rgba(0,0,0,.2)" }}>
+                  <div style={{ fontSize: 10, color: $.dim, marginBottom: 4 }}>JSON で gl/des/tp を編集できます。保存すると上書きします。</div>
+                  <textarea
+                    value={editText}
+                    onChange={function (e) { setEditText(e.target.value); }}
+                    rows={10}
+                    style={{ width: "100%", fontFamily: "monospace", fontSize: 11, padding: 8, borderRadius: 6, border: "1px solid " + $.border, background: "rgba(0,0,0,.4)", color: $.txt, resize: "vertical", boxSizing: "border-box" }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+                    <span style={{ fontSize: 11, color: editMsg.startsWith("✓") ? $.pitchL : $.redL }}>{editMsg}</span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={function () { setEditingName(null); }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 5, border: "1px solid " + $.border, background: "transparent", color: $.txt2, cursor: "pointer" }}>取消</button>
+                      <button onClick={saveEdit} style={{ fontSize: 11, padding: "4px 14px", borderRadius: 5, border: "none", background: $.gold, color: "#000", fontWeight: 700, cursor: "pointer" }}>更新</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
