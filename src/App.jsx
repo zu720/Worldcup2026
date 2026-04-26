@@ -15,26 +15,26 @@ import { hasSupabase } from "./lib/supabase";
 // Theme
 // ═══════════════════════════════════════════════════════════
 var $ = {
-  bg: "linear-gradient(135deg,#0e2747 0%,#1b3a6b 40%,#2a5891 100%)",
-  card: "rgba(255,255,255,.07)",
-  cardB: "rgba(255,255,255,.12)",
+  bg: "linear-gradient(135deg,#1e3a5f 0%,#3a6ea8 45%,#5894d2 100%)",
+  card: "rgba(255,255,255,.13)",
+  cardB: "rgba(255,255,255,.20)",
   gold: "#fbbf24",
   goldL: "#fde68a",
   goldD: "#b45309",
   pitchL: "#34d399",
-  pitch: "#10b981",
+  pitch: "#059669",
   red: "#f87171",
   redL: "#fca5a5",
-  blue: "#60a5fa",
+  blue: "#3b82f6",
   blueL: "#93c5fd",
-  purple: "#c084fc",
+  purple: "#a855f7",
   purpleL: "#d8b4fe",
-  txt: "#f5f7fa",
-  txt2: "#cbd5e1",
-  dim: "#94a3b8",
-  border: "rgba(255,255,255,.16)",
-  glow: "0 0 24px rgba(251,191,36,.55)",
-  glowS: "0 0 12px rgba(251,191,36,.4)",
+  txt: "#ffffff",
+  txt2: "#e2e8f0",
+  dim: "#a8b8cc",
+  border: "rgba(255,255,255,.22)",
+  glow: "0 0 24px rgba(251,191,36,.6)",
+  glowS: "0 0 12px rgba(251,191,36,.45)",
 };
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
