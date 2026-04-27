@@ -315,7 +315,7 @@ export default function App() {
       <div style={{ fontFamily: font, background: $.bg, color: $.txt, minHeight: "100vh", paddingBottom: 100 }}>
         <div style={{ position: "fixed", inset: 0, opacity: 0.04, backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
         <Header tab={tab} setTab={setTab} nm={nm} score={score} logout={logout} tour={tour} openAdmin={function () { setAdminOpen(true); }} />
-        <main style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 16px" }}>
+        <main className="main-pad" style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 16px" }}>
           {tab === "vote" && (
             <VoteTab
               gl={gl} des={des} ko={ko} tp={tp} ag={ag} setAg={setAg}
@@ -391,37 +391,38 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin }) {
   var phaseLabel = PHASE_LABEL[phase] || phase;
   return (
     <header style={{ background: "linear-gradient(180deg,rgba(5,7,13,.95),rgba(5,7,13,.78))", borderBottom: "1px solid " + $.border, padding: "0 20px", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(10px)" }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg," + $.gold + "," + $.goldD + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, boxShadow: $.glow }}>⚽</div>
-          <div>
-            <div style={{ fontFamily: fontH, fontSize: 11, letterSpacing: 2, color: $.gold }}>Road to 三幸園</div>
-            <div style={{ fontFamily: fontH, fontSize: 20, letterSpacing: 2 }}>FIFA WORLD CUP 2026</div>
+      <div className="h-bar" style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <div className="h-logo-mark" style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg," + $.gold + "," + $.goldD + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, boxShadow: $.glow, flexShrink: 0 }}>⚽</div>
+          <div style={{ minWidth: 0 }}>
+            <div className="h-logo-sub" style={{ fontFamily: fontH, fontSize: 11, letterSpacing: 2, color: $.gold }}>Road to 三幸園</div>
+            <div className="h-logo-main" style={{ fontFamily: fontH, fontSize: 20, letterSpacing: 2 }}>FIFA WORLD CUP 2026</div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 10, color: $.dim, letterSpacing: 1 }}>あなた</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: $.txt, letterSpacing: 1 }}>{nm}</div>
+            <div className="h-player-label" style={{ fontSize: 10, color: $.dim, letterSpacing: 1 }}>あなた</div>
+            <div className="h-player-name" style={{ fontSize: 14, fontWeight: 700, color: $.txt, letterSpacing: 1 }}>{nm}</div>
           </div>
           {score && (
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 10, color: $.dim, letterSpacing: 1 }}>得点</div>
-              <div className="pulse-glow" style={{ fontFamily: fontH, fontSize: 26, color: $.gold, letterSpacing: 1, lineHeight: 1 }}>{score.total.toFixed(1)}</div>
+              <div className="h-score-label" style={{ fontSize: 10, color: $.dim, letterSpacing: 1 }}>得点</div>
+              <div className="pulse-glow h-score-val" style={{ fontFamily: fontH, fontSize: 26, color: $.gold, letterSpacing: 1, lineHeight: 1 }}>{score.total.toFixed(1)}</div>
             </div>
           )}
-          <button onClick={logout} title="名前を変更" style={{ background: "transparent", border: "1px solid " + $.border, color: $.dim, fontSize: 11, padding: "6px 10px", borderRadius: 6, cursor: "pointer" }}>名前変更</button>
-          <button onClick={openAdmin} title="管理者" style={{ background: "transparent", border: "1px solid " + $.border, color: $.dim, fontSize: 14, padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>⚙️</button>
+          <button onClick={logout} title="名前を変更" className="h-rename-btn" style={{ background: "transparent", border: "1px solid " + $.border, color: $.dim, fontSize: 11, padding: "6px 10px", borderRadius: 6, cursor: "pointer" }}>名前変更</button>
+          <button onClick={openAdmin} title="管理者" className="h-admin-btn" style={{ background: "transparent", border: "1px solid " + $.border, color: $.dim, fontSize: 14, padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>⚙️</button>
         </div>
       </div>
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex" }}>
-        {[{ id: "vote", l: "🗳 予想する" }, { id: "results", l: "📊 みんなの予想" }, { id: "live", l: "⚽ 大会途中経過" }].map(function (t) {
+        <div className="h-tab-row" style={{ display: "flex" }}>
+        {[{ id: "vote", l: "🗳 予想する" }, { id: "results", l: "📊 ランキング" }, { id: "live", l: "⚽ 途中経過" }].map(function (t) {
           var act = tab === t.id;
           return (
             <button
               key={t.id}
               onClick={function () { setTab(t.id); }}
+              className="h-tab"
               style={{ fontSize: 13, padding: "10px 22px", cursor: "pointer", border: "none", borderBottom: act ? "2px solid " + $.gold : "2px solid transparent", background: "transparent", color: act ? $.gold : $.dim, transition: "color .2s", fontWeight: act ? 700 : 400, letterSpacing: 0.5 }}
             >
               {t.l}
@@ -429,8 +430,8 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin }) {
           );
         })}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: phase === "pre" ? $.dim : $.pitchL, padding: "0 10px 6px 0" }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: phase === "pre" ? $.dim : $.pitchL, boxShadow: phase === "pre" ? "none" : "0 0 8px " + $.pitchL, animation: phase === "pre" ? "none" : "pulse 2s ease-in-out infinite" }} />
+        <div className="h-phase" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: phase === "pre" ? $.dim : $.pitchL, padding: "0 10px 6px 0" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: phase === "pre" ? $.dim : $.pitchL, boxShadow: phase === "pre" ? "none" : "0 0 8px " + $.pitchL, animation: phase === "pre" ? "none" : "pulse 2s ease-in-out infinite", flexShrink: 0 }} />
           <span style={{ fontWeight: 700 }}>大会状況: {phaseLabel}</span>
         </div>
       </div>
@@ -494,8 +495,8 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
       </div>
 
       {/* QUICK VOTE */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 3, color: $.gold, marginRight: 4 }}>🎲 ランダム投票:</span>
+      <div className="qv-row" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+        <span className="qv-row-label" style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 3, color: $.gold, marginRight: 4 }}>🎲 ランダム投票:</span>
         {[
           { mode: "upset",    label: "大穴狙い",   color: $.red,  cl: $.redL },
           { mode: "balanced", label: "バランス型", color: $.blue, cl: $.blueL },
@@ -512,12 +513,12 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
             </button>
           );
         })}
-        <span style={{ fontSize: 11, color: $.dim }}>押すたびに別パターン</span>
+        <span className="qv-row-hint" style={{ fontSize: 11, color: $.dim }}>押すたびに別パターン</span>
       </div>
 
       {/* BONUS TEAMS */}
       <Sec icon="🌟" title="推しベスト3チーム" sub="3チームを選ぶと得点に倍率がかかる（1推し x2.5 / 2推し x1.8 / 3推し x1.3）" />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 32 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 12, marginBottom: 32 }}>
         {["A", "B", "C"].map(function (k) {
           var cfg = DES[k], picked = des[k];
           return (
@@ -533,7 +534,7 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
                   </span>
                 )}
               </div>
-              <div style={{ maxHeight: 280, overflowY: "auto" }}>
+              <div className="bonus-card-list" style={{ maxHeight: 280, overflowY: "auto" }}>
                 {allSorted.map(function (t) {
                   var isThis = des[k] === t.n;
                   var ub = des.A === t.n ? "A" : des.B === t.n ? "B" : des.C === t.n ? "C" : null;
@@ -543,13 +544,14 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
                     <div
                       key={t.n}
                       onClick={function () { if (!isO) setDes(k, t.n); }}
+                      className="bonus-team-row"
                       style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 14px", cursor: isO ? "default" : "pointer", background: isThis ? cfg.bg : "transparent", borderBottom: "1px solid rgba(255,255,255,.03)", opacity: isO ? 0.25 : 1, fontSize: 12 }}
                     >
                       <span style={{ fontWeight: isThis ? 700 : 400, color: isThis ? cfg.cl : $.txt, display: "flex", alignItems: "center", flex: 1, minWidth: 0 }}>
                         <Fl n={t.n} s={14} />{t.n}
                       </span>
                       <span style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                        <span style={{ fontSize: 14, color: $.gold, fontFamily: fontH, fontWeight: 700, minWidth: 50, textAlign: "right", letterSpacing: 1 }} title="基礎点（オッズ調整後）">x{b.toFixed(1)}</span>
+                        <span className="bonus-team-pt" style={{ fontSize: 14, color: $.gold, fontFamily: fontH, fontWeight: 700, minWidth: 50, textAlign: "right", letterSpacing: 1 }} title="基礎点（オッズ調整後）">x{b.toFixed(1)}</span>
                         {isO && <span style={{ fontSize: 9, color: DES[ub].cl }}>{ub}</span>}
                         {isThis && <span style={{ color: cfg.cl }}>✓</span>}
                       </span>
@@ -678,16 +680,17 @@ function SaveBar({ saveStatus, savedAt, saveNow, glComplete, score }) {
   else if (saveStatus === "saved") { label = "✓ 投票しました"; bg = "linear-gradient(135deg," + $.pitchL + "," + $.pitch + ")"; fg = "#fff"; }
   else if (saveStatus === "error") { label = "⚠ エラー（もう一度押す）"; bg = "linear-gradient(135deg," + $.red + "," + $.redL + ")"; fg = "#fff"; }
   return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "linear-gradient(180deg,rgba(5,7,13,.0),rgba(5,7,13,.92) 30%)", padding: "20px 16px", zIndex: 90, pointerEvents: "none" }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, pointerEvents: "auto" }}>
-        <div style={{ fontSize: 11, color: $.dim, letterSpacing: 1 }}>
+    <div className="save-bar" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "linear-gradient(180deg,rgba(5,7,13,.0),rgba(5,7,13,.92) 30%)", padding: "20px 16px", zIndex: 90, pointerEvents: "none" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, pointerEvents: "auto" }}>
+        <div className="save-bar-info" style={{ fontSize: 11, color: $.dim, letterSpacing: 1, minWidth: 0 }}>
           {savedAt ? <span>✓ 最終投票: {savedAt.toLocaleTimeString("ja-JP")}</span> : <span>{glComplete ? "予想完了！投票できます" : "12グループすべて設定すると投票できます"}</span>}
-          {score && <span style={{ marginLeft: 12, color: $.gold, fontFamily: fontH, letterSpacing: 2 }}>得点 {score.total.toFixed(1)}</span>}
+          {score && <span className="save-bar-info-score" style={{ marginLeft: 12, color: $.gold, fontFamily: fontH, letterSpacing: 2 }}>得点 {score.total.toFixed(1)}</span>}
         </div>
         <button
           onClick={saveNow}
           disabled={saveStatus === "saving"}
-          style={{ padding: "14px 36px", borderRadius: 10, border: "none", background: bg, color: fg, fontSize: 14, fontWeight: 700, letterSpacing: 1, cursor: saveStatus === "saving" ? "default" : "pointer", boxShadow: saveStatus === "saving" ? "none" : "0 4px 24px rgba(245,197,24,.45)", transition: "all .2s", minWidth: 220 }}
+          className="save-btn"
+          style={{ padding: "14px 36px", borderRadius: 10, border: "none", background: bg, color: fg, fontSize: 14, fontWeight: 700, letterSpacing: 1, cursor: saveStatus === "saving" ? "default" : "pointer", boxShadow: saveStatus === "saving" ? "none" : "0 4px 24px rgba(245,197,24,.45)", transition: "all .2s", minWidth: 220, flexShrink: 0 }}
         >
           {label}
         </button>
@@ -786,45 +789,60 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
             >
               <div
                 onClick={function () { setOpen(isOpen ? null : r.name); }}
+                className="lb-row"
                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", cursor: "pointer", flexWrap: "wrap" }}
               >
-                <div style={{ fontFamily: fontH, fontSize: 20, color: i === 0 ? $.gold : i === 1 ? "#bbb" : i === 2 ? "#cd7f32" : $.dim, width: 36, textAlign: "center", flexShrink: 0 }}>
+                <div className="lb-rank" style={{ fontFamily: fontH, fontSize: 20, color: i === 0 ? $.gold : i === 1 ? "#bbb" : i === 2 ? "#cd7f32" : $.dim, width: 36, textAlign: "center", flexShrink: 0 }}>
                   {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "#" + (i + 1)}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 110 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: isMe ? $.gold : $.txt }}>{r.name}</span>
-                  {isMe && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700 }}>あなた</span>}
+                <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexShrink: 1 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: isMe ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
+                  {isMe && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700, flexShrink: 0 }}>あなた</span>}
                 </div>
-                <div style={{ display: "flex", gap: 6, flex: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <div className="lb-bonuses leaderboard-row-bonuses" style={{ display: "flex", gap: 6, flex: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
                   {(["A", "B", "C"]).map(function (k) {
                     var n = r.des && r.des[k];
                     var cfg = DES[k];
                     if (!n) {
-                      return <span key={k} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l} 未選択</span>;
+                      return <span key={k} className="bonus-chip" style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l}—</span>;
                     }
                     return (
-                      <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, padding: "3px 8px", borderRadius: 5, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700 }}>
+                      <span key={k} className="bonus-chip" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, padding: "3px 8px", borderRadius: 5, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700 }}>
                         <span style={{ fontSize: 9, opacity: .8 }}>{cfg.l}</span>
                         <Fl n={n} s={12} />{n}
                       </span>
                     );
                   })}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, marginLeft: 6, fontSize: 12, lineHeight: 1.25 }}>
-                  <div style={{ display: "flex", gap: 8, fontWeight: 700 }}>
-                    <span style={{ color: r.hits == null ? $.dim : r.hits > 0 ? $.pitchL : $.txt2 }}>突破 {r.hits == null ? "—" : r.hits}/{r.total}</span>
-                    <span style={{ color: r.rank1 == null ? $.dim : r.rank1 > 0 ? $.gold : $.txt2 }}>1位 {r.rank1 == null ? "—" : r.rank1}/{r.rank1Total}</span>
-                    <span style={{ color: r.rank2 == null ? $.dim : r.rank2 > 0 ? $.goldL : $.txt2 }}>2位 {r.rank2 == null ? "—" : r.rank2}/{r.rank2Total}</span>
+                <div className="lb-side" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, marginLeft: 6, fontSize: 12, lineHeight: 1.25, flexShrink: 0 }}>
+                  <div className="lb-stats leaderboard-row-stats" style={{ display: "flex", gap: 8, fontWeight: 700 }}>
+                    <span style={{ color: r.hits == null ? $.dim : r.hits > 0 ? $.pitchL : $.txt2 }}>突破{r.hits == null ? "—" : r.hits}/{r.total}</span>
+                    <span style={{ color: r.rank1 == null ? $.dim : r.rank1 > 0 ? $.gold : $.txt2 }}>1位{r.rank1 == null ? "—" : r.rank1}/{r.rank1Total}</span>
+                    <span style={{ color: r.rank2 == null ? $.dim : r.rank2 > 0 ? $.goldL : $.txt2 }}>2位{r.rank2 == null ? "—" : r.rank2}/{r.rank2Total}</span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 2 }}>
+                  <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 2 }}>
                     <div style={{ fontFamily: fontH, fontSize: 22, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
                     <div style={{ fontSize: 11, color: $.txt2 }}>点</div>
                   </div>
                 </div>
-                <div style={{ color: $.dim, fontSize: 12, marginLeft: 4 }}>{isOpen ? "▲" : "▼"}</div>
+                <div className="lb-arrow" style={{ color: $.dim, fontSize: 12, marginLeft: 4, flexShrink: 0 }}>{isOpen ? "▲" : "▼"}</div>
               </div>
               {isOpen && (
                 <div style={{ borderTop: "1px solid " + $.border, padding: 10, background: "rgba(0,0,0,.18)" }}>
+                  {/* mobile-friendly bonus picks (always visible in expansion) */}
+                  <div className="lb-expand-bonuses" style={{ display: "none", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+                    {(["A", "B", "C"]).map(function (k) {
+                      var n = r.des && r.des[k];
+                      var cfg = DES[k];
+                      if (!n) return <span key={k} style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l}—</span>;
+                      return (
+                        <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, padding: "3px 7px", borderRadius: 4, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700 }}>
+                          <span style={{ fontSize: 9, opacity: .8 }}>{cfg.l}</span>
+                          <Fl n={n} s={11} />{n}
+                        </span>
+                      );
+                    })}
+                  </div>
                   <div style={{ fontSize: 11, color: $.gold, marginBottom: 6, fontWeight: 700 }}>グループ予想</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 4, fontSize: 10 }}>
                     {Object.keys(GRP).map(function (g) {
@@ -1212,8 +1230,8 @@ function Sec({ icon, title, sub }) {
         <span style={{ fontSize: 18 }}>{icon}</span>
         <div style={{ height: 1, flex: 1, background: "linear-gradient(90deg," + $.gold + "60,transparent)" }} />
       </div>
-      <div style={{ fontFamily: fontH, fontSize: 22, letterSpacing: 5, color: $.gold, textShadow: "0 0 12px rgba(245,197,24,.25)" }}>{title}</div>
-      {sub && <div style={{ fontSize: 11, color: $.dim, marginTop: 2 }}>{sub}</div>}
+      <div className="sec-title" style={{ fontFamily: fontH, fontSize: 22, letterSpacing: 5, color: $.gold, textShadow: "0 0 12px rgba(245,197,24,.25)" }}>{title}</div>
+      {sub && <div className="sec-sub" style={{ fontSize: 11, color: $.dim, marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -1380,6 +1398,53 @@ function Styles() {
       .pulse-glow{animation:pulseGlow 2.5s ease-in-out infinite}
       .qv-card:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
       .qv-chip:hover{transform:translateY(-1px);filter:brightness(1.15)}
+
+      /* ─── モバイル最適化 ─── */
+      @media (max-width: 640px) {
+        .h-bar { height: 52px !important; padding: 0 10px !important; }
+        .h-logo-mark { width: 32px !important; height: 32px !important; font-size: 17px !important; border-radius: 8px !important; }
+        .h-logo-sub { font-size: 9px !important; letter-spacing: 2px !important; margin-bottom: 1px !important; }
+        .h-logo-main { font-size: 16px !important; letter-spacing: 1px !important; white-space: nowrap !important; }
+        .h-player-name { font-size: 12px !important; }
+        .h-player-label { display: none !important; }
+        .h-score-val { font-size: 20px !important; }
+        .h-score-label { display: none !important; }
+        .h-rename-btn { display: none !important; }
+        .h-admin-btn { padding: 4px 8px !important; font-size: 13px !important; }
+        .h-tab { padding: 9px 10px !important; font-size: 12px !important; letter-spacing: 0 !important; flex: 1; text-align: center; }
+        .h-tab-row { width: 100% !important; }
+        .h-phase { font-size: 10px !important; padding: 0 6px 4px 0 !important; }
+        .h-phase span:last-child { white-space: nowrap; }
+        .main-pad { padding: 14px 10px !important; }
+        .sec-title { font-size: 18px !important; letter-spacing: 2px !important; }
+        .sec-sub { font-size: 11px !important; }
+        .qv-row { gap: 6px !important; }
+        .qv-row-label { display: none !important; }
+        .qv-chip { padding: 9px 12px !important; font-size: 13px !important; flex: 1; }
+        .qv-row-hint { display: none !important; }
+        .bonus-card-list { max-height: 260px !important; }
+        .bonus-team-row { padding: 8px 12px !important; font-size: 13px !important; }
+        .bonus-team-pt { font-size: 13px !important; min-width: 44px !important; }
+        .group-card { font-size: 14px !important; }
+        .save-bar { padding: 10px 8px !important; }
+        .save-bar-info { font-size: 10px !important; }
+        .save-bar-info-score { display: none !important; }
+        .save-btn { padding: 12px 14px !important; min-width: 0 !important; font-size: 13px !important; letter-spacing: 1px !important; flex: 1; }
+        .rule-bubble { padding: 14px !important; font-size: 12px !important; }
+        .rule-bubble code { word-break: break-all; }
+        /* Leaderboard mobile compact */
+        .lb-row { gap: 6px !important; padding: 7px 10px !important; flex-wrap: nowrap !important; }
+        .lb-rank { font-size: 16px !important; width: 26px !important; }
+        .lb-name { gap: 4px !important; flex: 1 !important; min-width: 0 !important; }
+        .lb-name span:first-child { font-size: 13px !important; }
+        .lb-bonuses { display: none !important; }
+        .lb-stats { font-size: 9px !important; gap: 4px !important; }
+        .lb-stats span { white-space: nowrap; }
+        .lb-side { gap: 1px !important; margin-left: 0 !important; }
+        .lb-score-block > div:first-child { font-size: 18px !important; }
+        .lb-arrow { font-size: 11px !important; }
+        .lb-expand-bonuses { display: flex !important; }
+      }
     ` }} />
   );
 }
