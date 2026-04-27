@@ -80,3 +80,26 @@ create policy "write tournament" on tournament for all using (true) with check (
 
 alter publication supabase_realtime add table predictions;
 alter publication supabase_realtime add table tournament;
+
+-- ═══════════════════════════════════════════════════════════
+-- アクセスログ
+-- 管理者画面で総アクセス・今日のアクセス・直近活動を確認するためだけの軽量ログ
+-- ═══════════════════════════════════════════════════════════
+
+create table if not exists visits (
+  id uuid primary key default gen_random_uuid(),
+  name text,                                  -- 入った時の表示名（未入力ならnull）
+  path text,
+  ua text,                                    -- User-Agent（簡易デバイス区別用）
+  created_at timestamptz default now()
+);
+
+create index if not exists visits_created_at_idx on visits (created_at desc);
+
+alter table visits enable row level security;
+
+drop policy if exists "insert visits" on visits;
+create policy "insert visits" on visits for insert with check (true);
+
+drop policy if exists "read visits" on visits;
+create policy "read visits" on visits for select using (true);

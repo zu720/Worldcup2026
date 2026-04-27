@@ -137,6 +137,45 @@ export async function saveTournament(patch) {
   return true;
 }
 
+/* ── visit log (admin analytics) ── */
+
+const LS_VISIT_KEY = 'wc2026:visits';
+
+export async function logVisit({ name, path, ua }) {
+  const payload = { name: name || null, path: path || '/', ua: ua ? ua.slice(0, 240) : null };
+  if (hasSupabase) {
+    try { await supabase.from('visits').insert(payload); } catch { /* ignore */ }
+    return;
+  }
+  const arr = lsLoad(LS_VISIT_KEY, []);
+  arr.push({ ...payload, created_at: new Date().toISOString() });
+  lsSave(LS_VISIT_KEY, arr.slice(-200)); // keep last 200
+}
+
+export async function getVisitStats() {
+  if (hasSupabase) {
+    const since24 = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const [{ count: total }, { count: today }, { count: week }, recentRes, namesRes] = await Promise.all([
+      supabase.from('visits').select('*', { count: 'exact', head: true }),
+      supabase.from('visits').select('*', { count: 'exact', head: true }).gte('created_at', since24),
+      supabase.from('visits').select('*', { count: 'exact', head: true }).gte('created_at', since7d),
+      supabase.from('visits').select('*').order('created_at', { ascending: false }).limit(30),
+      supabase.from('visits').select('name').not('name', 'is', null),
+    ]);
+    const uniqueNames = new Set((namesRes.data || []).map((r) => r.name).filter(Boolean)).size;
+    return { total, today, week, uniqueNames, recent: recentRes.data || [] };
+  }
+  const arr = lsLoad(LS_VISIT_KEY, []);
+  return {
+    total: arr.length,
+    today: arr.filter((v) => Date.now() - new Date(v.created_at).getTime() < 24 * 3600 * 1000).length,
+    week: arr.filter((v) => Date.now() - new Date(v.created_at).getTime() < 7 * 24 * 3600 * 1000).length,
+    uniqueNames: new Set(arr.map((v) => v.name).filter(Boolean)).size,
+    recent: arr.slice(-30).reverse(),
+  };
+}
+
 /* ── realtime subscriptions (supabase only) ── */
 
 export function subscribePredictions(onChange) {

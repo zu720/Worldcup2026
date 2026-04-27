@@ -9,6 +9,8 @@ import {
   getTournament,
   saveTournament,
   subscribeTournament,
+  logVisit,
+  getVisitStats,
   myName as myNameStore,
 } from "./lib/api";
 import { hasSupabase } from "./lib/supabase";
@@ -300,6 +302,17 @@ export default function App() {
     load();
     var unsub = subscribeTournament(load);
     return function () { live = false; if (unsub) unsub(); };
+  }, []);
+
+  // ページアクセスログ
+  useEffect(function () {
+    try {
+      logVisit({
+        name: myNameStore.get() || null,
+        path: window.location.pathname + window.location.hash,
+        ua: navigator.userAgent,
+      });
+    } catch (e) { /* ignore */ }
   }, []);
 
   // ──────────────────────────────────────────────────────
@@ -1030,11 +1043,83 @@ function AdminPanel({ tour, setTour, close }) {
               <button onClick={save} disabled={saving} style={{ padding: "10px 24px", border: "none", borderRadius: 8, background: $.gold, color: "#000", fontWeight: 700, cursor: saving ? "default" : "pointer", opacity: saving ? .6 : 1 }}>{saving ? "保存中..." : "💾 実結果を保存"}</button>
             </div>
 
+            {/* Visit stats */}
+            <AdminVisitStats />
+
             {/* Member predictions management */}
             <AdminMembers />
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Admin: Visit stats
+// ═══════════════════════════════════════════════════════════
+function AdminVisitStats() {
+  var [stats, setStats] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [err, setErr] = useState("");
+  function reload() {
+    setLoading(true);
+    getVisitStats().then(function (s) { setStats(s); setLoading(false); setErr(""); })
+      .catch(function (e) { setErr(e.message || String(e)); setLoading(false); });
+  }
+  useEffect(function () { reload(); }, []);
+
+  function deviceLabel(ua) {
+    if (!ua) return "—";
+    if (/iPhone|iPad|iPod/i.test(ua)) return "📱 iOS";
+    if (/Android/i.test(ua)) return "📱 Android";
+    if (/Mac OS X/i.test(ua)) return "💻 Mac";
+    if (/Windows/i.test(ua)) return "💻 Win";
+    return "🖥 Other";
+  }
+
+  return (
+    <div style={{ marginTop: 18, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
+      <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>📈 アクセス統計</span>
+        <button onClick={reload} style={{ background: "transparent", border: "1px solid " + $.border, color: $.txt2, fontSize: 11, padding: "3px 10px", borderRadius: 5, cursor: "pointer" }}>↻ 再読込</button>
+      </div>
+      {loading && <div style={{ fontSize: 11, color: $.dim }}>読込中...</div>}
+      {err && <div style={{ fontSize: 11, color: $.redL }}>エラー: {err}{err && err.indexOf("visits") >= 0 && <span style={{ marginLeft: 8 }}>（visits テーブル未作成？supabase/schema.sql の最新版を再実行）</span>}</div>}
+      {stats && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))", gap: 8, marginBottom: 10 }}>
+            {[
+              { l: "総アクセス", v: stats.total, c: $.gold },
+              { l: "直近24h", v: stats.today, c: $.pitchL },
+              { l: "直近7日間", v: stats.week, c: $.blueL },
+              { l: "ユニーク名前", v: stats.uniqueNames, c: $.purpleL },
+            ].map(function (s) {
+              return (
+                <div key={s.l} style={{ padding: "8px 10px", borderRadius: 6, background: "rgba(0,0,0,.2)", border: "1px solid " + $.border }}>
+                  <div style={{ fontSize: 10, color: $.dim }}>{s.l}</div>
+                  <div style={{ fontFamily: fontH, fontSize: 22, color: s.c, lineHeight: 1.1 }}>{s.v == null ? "—" : s.v}</div>
+                </div>
+              );
+            })}
+          </div>
+          <details>
+            <summary style={{ fontSize: 11, color: $.txt2, cursor: "pointer", marginBottom: 6 }}>直近30件のアクセスログ</summary>
+            <div style={{ maxHeight: 200, overflowY: "auto", fontSize: 11 }}>
+              {(stats.recent || []).map(function (v, i) {
+                return (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "3px 6px", borderBottom: "1px solid " + $.border, color: $.txt2 }}>
+                    <span style={{ width: 130, color: $.dim, flexShrink: 0 }}>{v.created_at ? new Date(v.created_at).toLocaleString("ja-JP") : "—"}</span>
+                    <span style={{ flex: 1, color: v.name ? $.gold : $.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.name || "(名前未入力)"}</span>
+                    <span style={{ width: 70, textAlign: "right", flexShrink: 0 }}>{deviceLabel(v.ua)}</span>
+                  </div>
+                );
+              })}
+              {(!stats.recent || stats.recent.length === 0) && <div style={{ padding: 8, color: $.dim }}>ログがまだありません</div>}
+            </div>
+          </details>
+        </div>
+      )}
     </div>
   );
 }
