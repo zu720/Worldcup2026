@@ -463,31 +463,49 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
               <button onClick={function () { setShowRules(false); }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 5, background: "transparent", border: "1px solid " + $.border, color: $.txt2, cursor: "pointer" }}>閉じる</button>
             </div>
             <div style={{ fontSize: 12, color: $.txt, lineHeight: 1.7 }}>
+              {/* ここだけ読めばOK */}
+              <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "linear-gradient(135deg,rgba(251,191,36,.18),rgba(251,191,36,.04))", border: "1px solid " + $.gold + "70" }}>
+                <div style={{ fontFamily: fontH, fontSize: 14, letterSpacing: 2, color: $.gold, marginBottom: 6 }}>🔥 ここだけ読めばOK</div>
+                <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                  <div><strong style={{ color: $.gold }}>1.</strong> 各グループの <strong>1位・2位</strong> を選ぶ（12グループ分）</div>
+                  <div><strong style={{ color: $.gold }}>2.</strong> <strong>推しチーム</strong> を 1番・2番・3番 と選ぶ（48チームから）</div>
+                  <div><strong style={{ color: $.gold }}>3.</strong> 画面下の <strong>「🗳 予想を投票する」</strong> を押すだけ！</div>
+                </div>
+                <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6, background: "rgba(239,68,68,.15)", border: "1px solid " + $.red + "60", fontSize: 12, color: $.redL }}>
+                  ⏰ <strong>投票締切: 2026年5月31日(日) 23:59</strong> ／ 6/1以降はロック
+                </div>
+              </div>
+
               <div style={{ marginBottom: 10 }}>
-                <strong style={{ color: $.gold }}>① 遊び方</strong><br />
+                <strong style={{ color: $.gold }}>① 遊び方（くわしく）</strong><br />
                 ・各グループの<strong>1位・2位</strong>を予想（必須） — 3位・4位は任意<br />
                 ・<strong>推しベスト3チーム</strong>を48チームから選ぶ（倍率がかかる）<br />
                 ・決勝トーナメントは自分でシミュ可（自分のスコア試算用）<br />
-                ・画面下の「🗳 予想を投票する」で保存。再ログインで編集可
+                ・同じ名前で再ログインすれば、いつでも編集できます
               </div>
               <div style={{ marginBottom: 10 }}>
                 <strong style={{ color: $.gold }}>② ポイント計算</strong><br />
-                <code style={{ background: "rgba(0,0,0,.3)", padding: "1px 6px", borderRadius: 3 }}>得点 = 基礎点 × ステージ倍率 × 推し倍率</code><br />
+                <code style={{ background: "rgba(0,0,0,.3)", padding: "1px 6px", borderRadius: 3 }}>得点 = 基礎点 × ステージ倍率 × 推し倍率 × 順位的中ボーナス</code><br />
                 <span style={{ color: $.txt2 }}>基礎点</span> = オッズ調整値（大穴ほど高い）<br />
                 <span style={{ color: $.txt2 }}>ステージ倍率（累積加算）</span><br />
                 　ベスト32 <strong>x0.2</strong> ／ ベスト16 <strong>x3.0</strong> ／ ベスト8 <strong style={{ color: $.gold }}>x5.0(最高)</strong><br />
                 　準決勝 x2.5 ／ 決勝 x3.0 ／ 優勝 x4.0 ／ 3位 x1.5<br />
-                <span style={{ color: $.txt2 }}>推し倍率</span>: 1推し <strong>x2.5</strong> ／ 2推し x1.8 ／ 3推し x1.3
+                <span style={{ color: $.txt2 }}>推し倍率</span>: 1推し <strong>x2.5</strong> ／ 2推し x1.8 ／ 3推し x1.3<br />
+                <span style={{ color: $.pitchL, fontWeight: 700 }}>順位的中ボーナス</span>: グループ <strong style={{ color: $.gold }}>1位を完全的中で x1.5</strong> ／ <strong style={{ color: $.goldL }}>2位を完全的中で x1.25</strong>
+                <div style={{ fontSize: 11, color: $.txt2, marginTop: 4 }}>
+                  ※「通過するチームを当てる」だけでなく、<strong style={{ color: $.gold }}>「順位ピッタリ当てる」</strong>とさらに加点。1位と2位で配点が違います。
+                </div>
               </div>
               <div style={{ marginBottom: 10 }}>
                 <strong style={{ color: $.gold }}>③ 戦略のコツ</strong><br />
                 ・ベスト32は48中32が通過するので的中ハードル低 → 配点低め<br />
                 ・<strong>ベスト8到達予想が一番効く</strong>（x5.0）<br />
+                ・<strong>1位を当てると更に x1.5</strong> 乗るので、迷ったら本命を1位に<br />
                 ・大穴を「推し」に指定して当てるとスコアが跳ねる<br />
                 ・上の「ランダム投票（大穴狙い／バランス／ガチガチ）」で雛形生成も可
               </div>
               <div style={{ paddingTop: 8, borderTop: "1px solid " + $.border, color: $.txt2, fontSize: 11 }}>
-                <strong style={{ color: $.pitchL }}>📊 みんなの予想</strong> でリアルタイム順位、 <strong style={{ color: $.pitchL }}>⚽ 大会途中経過</strong> で実際の試合結果が見れます。
+                <strong style={{ color: $.pitchL }}>📊 ランキング</strong> でリアルタイム順位、 <strong style={{ color: $.pitchL }}>⚽ 途中経過</strong> で実際の試合結果が見れます。
               </div>
             </div>
           </div>
