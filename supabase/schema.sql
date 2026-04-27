@@ -78,8 +78,13 @@ create policy "write tournament" on tournament for all using (true) with check (
 --   predictions と tournament を enable してもOK）
 -- ═══════════════════════════════════════════════════════════
 
-alter publication supabase_realtime add table predictions;
-alter publication supabase_realtime add table tournament;
+-- 既に登録済みでもエラーにならないように
+do $$
+begin
+  begin alter publication supabase_realtime add table predictions; exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table tournament; exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table visits; exception when duplicate_object then null; end;
+end $$;
 
 -- ═══════════════════════════════════════════════════════════
 -- アクセスログ
