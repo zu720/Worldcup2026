@@ -141,6 +141,30 @@ function calcScore(gl, des, ko, groups) {
     return { total: Math.round(total * 100) / 100, bd: bd.sort(function (a, b) { return b.pts - a.pts; }) };
   } catch (e) { return { total: 0, bd: [] }; }
 }
+// 投票傾向の判定（ガチガチ / バランス型 / 大穴狙い）
+function votingStyle(gl, des) {
+  try {
+    var idxSum = 0, cnt = 0;
+    Object.keys(gl || {}).forEach(function (g) {
+      var arr = gl[g] || [];
+      var sorted = (GRP[g] || []).slice().sort(function (a, b) { return a.o - b.o; });
+      arr.slice(0, 2).forEach(function (tn) {
+        var idx = sorted.findIndex(function (t) { return t.n === tn; });
+        if (idx >= 0) { idxSum += idx; cnt++; }
+      });
+    });
+    if (cnt === 0) return null;
+    var avgIdx = idxSum / cnt;
+    var oo = ["A", "B", "C"].map(function (k) { return des && des[k] ? des[k] : null; }).filter(Boolean).map(function (n) { var t = ft(n); return t ? t.o : 80; });
+    var avgOshi = oo.length ? oo.reduce(function (a, b) { return a + b; }, 0) / oo.length : 80;
+    // グループ予想の穴度(avgIdx 0〜3)を従、推し平均オッズ(対数)を主に合成
+    var score = avgIdx * 0.6 + Math.log10(Math.max(avgOshi, 2));
+    if (score <= 1.5) return { k: "gachi", l: "ガチガチ", emoji: "🏰", cl: $.goldL, bg: "rgba(251,191,36,.16)", bd: $.gold };
+    if (score >= 2.5) return { k: "ana", l: "大穴狙い", emoji: "🔥", cl: $.redL, bg: "rgba(248,113,113,.16)", bd: $.red };
+    return { k: "bal", l: "バランス型", emoji: "⚖️", cl: $.blueL, bg: "rgba(96,165,250,.16)", bd: $.blue };
+  } catch (e) { return null; }
+}
+
 function deriveRounds(r32,ko){var empty={r16:[{t1:null,t2:null},{t1:null,t2:null},{t1:null,t2:null},{t1:null,t2:null}],qf:[{t1:null,t2:null},{t1:null,t2:null}]};try{if(!r32||r32.length<8||!ko)return empty;var r16=[];var koR32=ko.r32||[];for(var i=0;i<8;i+=2){var m1=r32[i],m2=r32[i+1];var t1s=(m1&&m1.teams||[]).filter(function(t){return t&&t.n&&!t.tbd;});var t2s=(m2&&m2.teams||[]).filter(function(t){return t&&t.n&&!t.tbd;});r16.push({t1:t1s.find(function(t){return koR32.indexOf(t.n)>=0;})||null,t2:t2s.find(function(t){return koR32.indexOf(t.n)>=0;})||null});}var qf=[];var koR16=ko.r16||[];for(var j=0;j<4;j+=2){var a=[r16[j].t1,r16[j].t2].filter(function(x){return x&&x.n;});var b=[r16[j+1].t1,r16[j+1].t2].filter(function(x){return x&&x.n;});qf.push({t1:a.find(function(t){return koR16.indexOf(t.n)>=0;})||null,t2:b.find(function(t){return koR16.indexOf(t.n)>=0;})||null});}return{r16:r16,qf:qf};}catch(e){return empty;}}
 
 // 実大会データ → ブラケット表示用 gl/tp を派生
@@ -784,6 +808,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
         hits: hits, total: picks.length,
         rank1: hasGroupsData ? hits1 : null, rank1Total: 12,
         rank2: hasGroupsData ? hits2 : null, rank2Total: 12,
+        vstyle: votingStyle(p.gl || {}, p.des || {}),
       };
     }).sort(function (a, b) { return b.score.total - a.score.total; });
   }, [list, koForScore, groupsForScore, liveStarted, tour]);
@@ -869,6 +894,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
                 <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexShrink: 1 }}>
                   <span style={{ fontSize: 15, fontWeight: 700, color: isMe ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
                   {isMe && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700, flexShrink: 0 }}>あなた</span>}
+                  {r.vstyle && <span title="投票傾向" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, background: r.vstyle.bg, border: "1px solid " + r.vstyle.bd + "66", color: r.vstyle.cl, fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>{r.vstyle.emoji}{r.vstyle.l}</span>}
                 </div>
                 <div className="lb-bonuses leaderboard-row-bonuses" style={{ display: "flex", gap: 6, flex: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
                   {(["A", "B", "C"]).map(function (k) {
@@ -961,10 +987,10 @@ function VoteStats({ teamStats }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 26 }}>
         {topBreakout.map(function (s, i) {
           return (
-            <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: $.card, border: "1px solid " + $.border }}>
+            <div key={s.n} className="lift" style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: $.card, border: "1px solid " + $.border }}>
               <span style={{ fontFamily: fontH, fontSize: 14, color: $.dim, width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 5, width: 120, flexShrink: 0, fontSize: 13, fontWeight: 600 }}><Fl n={s.n} s={16} />{s.n}</span>
-              <div style={{ flex: 1, display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(255,255,255,.06)", minWidth: 40 }}>
+              <div className="bar-grow" style={{ flex: 1, display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(255,255,255,.06)", minWidth: 40 }}>
                 <div title={"1位 " + s.r1 + "票"} style={{ width: pct(s.r1) + "%", background: $.gold, height: "100%" }} />
                 <div title={"2位 " + s.r2 + "票"} style={{ width: pct(s.r2) + "%", background: $.gold + "55", height: "100%" }} />
               </div>
@@ -986,10 +1012,10 @@ function VoteStats({ teamStats }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {topOshi.map(function (s, i) {
             return (
-              <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: $.card, border: "1px solid " + $.border }}>
+              <div key={s.n} className="lift" style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: $.card, border: "1px solid " + $.border }}>
                 <span style={{ fontFamily: fontH, fontSize: 14, color: $.dim, width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</span>
                 <span style={{ display: "flex", alignItems: "center", gap: 5, width: 120, flexShrink: 0, fontSize: 13, fontWeight: 600 }}><Fl n={s.n} s={16} />{s.n}</span>
-                <div style={{ flex: 1, display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(255,255,255,.06)", minWidth: 40 }}>
+                <div className="bar-grow" style={{ flex: 1, display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(255,255,255,.06)", minWidth: 40 }}>
                   <div title={"1推し " + s.oshiA + "票"} style={{ width: pct(s.oshiA) + "%", background: DES.A.c, height: "100%" }} />
                   <div title={"2推し " + s.oshiB + "票"} style={{ width: pct(s.oshiB) + "%", background: DES.B.c, height: "100%" }} />
                   <div title={"3推し " + s.oshiC + "票"} style={{ width: pct(s.oshiC) + "%", background: DES.C.c, height: "100%" }} />
@@ -1384,7 +1410,7 @@ function LiveTab({ tour, liveStarted }) {
               var isWC = AT.some(function (t) { return t.n === m.home; });
               var isWCa = AT.some(function (t) { return t.n === m.away; });
               return (
-                <div key={i} style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, padding: "9px 12px" }}>
+                <div key={i} className="lift" style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, padding: "9px 12px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <span style={{ fontSize: 9, color: $.dim, letterSpacing: 0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{m.league || "親善試合"}</span>
                     <span style={{ fontSize: 9, color: $.dim, flexShrink: 0 }}>{m.date}</span>
@@ -1480,7 +1506,7 @@ function Sec({ icon, title, sub }) {
         <span style={{ fontSize: 18 }}>{icon}</span>
         <div style={{ height: 1, flex: 1, background: "linear-gradient(90deg," + $.gold + "60,transparent)" }} />
       </div>
-      <div className="sec-title" style={{ fontFamily: fontH, fontSize: 22, letterSpacing: 5, color: $.gold, textShadow: "0 0 12px rgba(245,197,24,.25)" }}>{title}</div>
+      <div className="sec-title" style={{ fontFamily: fontH, fontSize: 21, letterSpacing: 2, color: $.gold, textShadow: "0 0 12px rgba(245,197,24,.25)" }}>{title}</div>
       {sub && <div className="sec-sub" style={{ fontSize: 11, color: $.dim, marginTop: 2 }}>{sub}</div>}
     </div>
   );
@@ -1646,8 +1672,13 @@ function Styles() {
       @keyframes pulseGlow{0%,100%{text-shadow:0 0 20px rgba(245,197,24,.5)}50%{text-shadow:0 0 36px rgba(245,197,24,.85)}}
       .fade-in{animation:fadeUp .5s ease both}
       .pulse-glow{animation:pulseGlow 2.5s ease-in-out infinite}
+      button{transition:background-color .15s ease,border-color .15s ease,color .15s ease,box-shadow .2s ease,transform .15s ease}
       .qv-card:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
       .qv-chip:hover{transform:translateY(-1px);filter:brightness(1.15)}
+      .lift{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+      .lift:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.32);border-color:rgba(251,191,36,.45)}
+      @keyframes growX{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+      .bar-grow{transform-origin:left center;animation:growX .55s cubic-bezier(.22,1,.36,1) both}
 
       /* ─── モバイル最適化 ─── */
       @media (max-width: 640px) {

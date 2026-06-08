@@ -65,7 +65,7 @@ jobs:
           const NM = {
             'Mexico':'メキシコ','South Africa':'南アフリカ','Korea Republic':'韓国','South Korea':'韓国',
             'Czech Republic':'チェコ','Czechia':'チェコ',
-            'Canada':'カナダ','Bosnia and Herzegovina':'ボスニア','Bosnia & Herzegovina':'ボスニア',
+            'Canada':'カナダ','Bosnia and Herzegovina':'ボスニア','Bosnia & Herzegovina':'ボスニア','Bosnia-Herzegovina':'ボスニア',
             'Qatar':'カタール','Switzerland':'スイス',
             'Brazil':'ブラジル','Morocco':'モロッコ','Haiti':'ハイチ','Scotland':'スコットランド',
             'United States':'アメリカ','USA':'アメリカ','Paraguay':'パラグアイ',
@@ -182,6 +182,7 @@ jobs:
             const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
             const friendlies = [];
             const seen = new Set();
+            const seenMatch = new Set();
             try {
               const entries = Object.entries(SDB);
               for (const [jaName, id] of entries) {
@@ -189,21 +190,23 @@ jobs:
                   const r = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${id}`);
                   const d = await r.json();
                   const ev = (d.results || [])[0];
-                  if (!ev) { await sleep(1200); continue; }
-                  const key = [ev.idEvent].join('|');
-                  if (seen.has(key)) { await sleep(1200); continue; }
-                  seen.add(key);
-                  const toJa = (n) => SDB_EN_JA[n] || n;
-                  friendlies.push({
-                    date: ev.dateEvent || '',
-                    home: toJa(ev.strHomeTeam || ''),
-                    away: toJa(ev.strAwayTeam || ''),
-                    hs: ev.intHomeScore == null ? null : Number(ev.intHomeScore),
-                    as: ev.intAwayScore == null ? null : Number(ev.intAwayScore),
-                    league: ev.strLeague || '',
-                  });
+                  if (ev) {
+                    const toJa = (n) => SDB_EN_JA[n] || n;
+                    const home = toJa(ev.strHomeTeam || ''), away = toJa(ev.strAwayTeam || '');
+                    const mkey = home + '|' + away + '|' + (ev.dateEvent || '');
+                    const involvesTarget = (home === jaName || away === jaName); // 対象国が出ている試合のみ（キャッシュ流用を弾く）
+                    if (involvesTarget && !seen.has(ev.idEvent) && !seenMatch.has(mkey)) {
+                      seen.add(ev.idEvent); seenMatch.add(mkey);
+                      friendlies.push({
+                        date: ev.dateEvent || '', home, away,
+                        hs: ev.intHomeScore == null ? null : Number(ev.intHomeScore),
+                        as: ev.intAwayScore == null ? null : Number(ev.intAwayScore),
+                        league: ev.strLeague || '',
+                      });
+                    }
+                  }
                 } catch (e) { /* skip team */ }
-                await sleep(1200); // レート制限対策（無料key ~30req/分）
+                await sleep(2600); // レート制限対策（無料key ~30req/分を確実に下回る）
               }
               // 日付降順、最新24件
               friendlies.sort((a, b) => (b.date || '').localeCompare(a.date || ''));

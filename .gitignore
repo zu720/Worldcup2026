@@ -9,3 +9,6 @@ dist
 .claude
 files/
 files.zip
+
+# ローカル投入ツール（秘密鍵ハードコードのためコミットしない）
+scripts/
