@@ -2,8 +2,10 @@ name: Update Match Results
 
 on:
   schedule:
-    # 大会期間中（2026年6月-7月）2時間ごと
-    - cron: '0 */2 * 6-7 *'
+    # 大会期間中（6-7月）は2時間ごと
+    - cron: '0 */2 * 6,7 *'
+    # 通年 毎日1回（開幕前の親善試合更新用 / UTC 03:00）
+    - cron: '0 3 * * *'
   workflow_dispatch: # 手動実行も可
 
 jobs:
@@ -156,7 +158,61 @@ jobs:
             await patchSupabase('tournament', 'id', 'wc2026', {
               phase, groups, ko, last_api_update: new Date().toISOString(),
             });
-            console.log('✅ Supabase updated.');
+            console.log('✅ Supabase (WC) updated.');
+
+            // ── 3) 直近の代表戦（TheSportsDB, 無料）──
+            // 48出場国の直近1試合を取得し、重複除去して friendlies に保存
+            const SDB = {
+              "メキシコ":"134497","南アフリカ":"136482","韓国":"134517","チェコ":"133904",
+              "カナダ":"140073","ボスニア":"149845","カタール":"136472","スイス":"134506",
+              "ブラジル":"134496","モロッコ":"136139","ハイチ":"140175","スコットランド":"136450",
+              "アメリカ":"134514","パラグアイ":"136471","オーストラリア":"134500","トルコ":"135985",
+              "ドイツ":"133907","キュラソー":"140271","コートジボワール":"134502","エクアドル":"134507",
+              "オランダ":"133905","日本":"134503","スウェーデン":"133916","チュニジア":"136142",
+              "ベルギー":"134515","エジプト":"136138","イラン":"134511","ニュージーランド":"137449",
+              "スペイン":"133909","カーボベルデ":"136477","サウジアラビア":"136137","ウルグアイ":"134504",
+              "フランス":"133913","セネガル":"136143","イラク":"140148","ノルウェー":"136516",
+              "アルゼンチン":"134509","アルジェリア":"134516","オーストリア":"135986","ヨルダン":"140145",
+              "ポルトガル":"133908","DRコンゴ":"136475","ウズベキスタン":"140151","コロンビア":"134501",
+              "イングランド":"133914","クロアチア":"133912","ガーナ":"134513","パナマ":"136141",
+            };
+            // TheSportsDB英名 → 日本語（表示用に相手国も日本語化を試みる）
+            const SDB_EN_JA = {};
+            Object.keys(NM).forEach((en) => { SDB_EN_JA[en] = NM[en]; });
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            const friendlies = [];
+            const seen = new Set();
+            try {
+              const entries = Object.entries(SDB);
+              for (const [jaName, id] of entries) {
+                try {
+                  const r = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${id}`);
+                  const d = await r.json();
+                  const ev = (d.results || [])[0];
+                  if (!ev) { await sleep(1200); continue; }
+                  const key = [ev.idEvent].join('|');
+                  if (seen.has(key)) { await sleep(1200); continue; }
+                  seen.add(key);
+                  const toJa = (n) => SDB_EN_JA[n] || n;
+                  friendlies.push({
+                    date: ev.dateEvent || '',
+                    home: toJa(ev.strHomeTeam || ''),
+                    away: toJa(ev.strAwayTeam || ''),
+                    hs: ev.intHomeScore == null ? null : Number(ev.intHomeScore),
+                    as: ev.intAwayScore == null ? null : Number(ev.intAwayScore),
+                    league: ev.strLeague || '',
+                  });
+                } catch (e) { /* skip team */ }
+                await sleep(1200); // レート制限対策（無料key ~30req/分）
+              }
+              // 日付降順、最新24件
+              friendlies.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+              const recent = friendlies.slice(0, 24);
+              await patchSupabase('tournament', 'id', 'wc2026', { friendlies: recent });
+              console.log('✅ friendlies updated:', recent.length, 'matches');
+            } catch (e) {
+              console.warn('friendlies fail (column missing?):', e.message);
+            }
           }
 
           main().catch((e) => { console.error('❌', e); process.exit(1); });

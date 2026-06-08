@@ -1349,6 +1349,7 @@ function LiveTab({ tour, liveStarted }) {
   var phase = (tour && tour.phase) || "pre";
   var groups = (tour && tour.groups) || {};
   var ko = (tour && tour.ko) || {};
+  var friendlies = (tour && tour.friendlies) || [];
   var lastUpd = tour && tour.last_api_update;
 
   // 実データからブラケット表示用に派生
@@ -1370,6 +1371,39 @@ function LiveTab({ tour, liveStarted }) {
         <div style={{ padding: 40, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12, marginBottom: 20 }}>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>⚽ まだ大会開幕前です</div>
           <p style={{ fontSize: 12 }}>2026年6月11日キックオフ予定。試合が始まると、ここに結果が自動で反映されます。</p>
+        </div>
+      )}
+
+      {/* 直近の代表戦（親善試合など） */}
+      {friendlies.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 4 }}>🌍 出場国の直近試合</div>
+          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>開幕前の親善試合・予選など、各代表チームの最新結果（毎日自動更新）。</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>
+            {friendlies.map(function (m, i) {
+              var isWC = AT.some(function (t) { return t.n === m.home; });
+              var isWCa = AT.some(function (t) { return t.n === m.away; });
+              return (
+                <div key={i} style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, padding: "9px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ fontSize: 9, color: $.dim, letterSpacing: 0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{m.league || "親善試合"}</span>
+                    <span style={{ fontSize: 9, color: $.dim, flexShrink: 0 }}>{m.date}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                    <span style={{ flex: 1, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontWeight: isWC ? 700 : 400, color: isWC ? $.txt : $.txt2 }}>
+                      {m.home}{isWC && <Fl n={m.home} s={14} />}
+                    </span>
+                    <span style={{ fontFamily: fontH, fontSize: 17, color: $.gold, padding: "0 6px", whiteSpace: "nowrap" }}>
+                      {m.hs == null ? "-" : m.hs}<span style={{ color: $.dim, margin: "0 2px" }}>:</span>{m.as == null ? "-" : m.as}
+                    </span>
+                    <span style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 4, fontWeight: isWCa ? 700 : 400, color: isWCa ? $.txt : $.txt2 }}>
+                      {isWCa && <Fl n={m.away} s={14} />}{m.away}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

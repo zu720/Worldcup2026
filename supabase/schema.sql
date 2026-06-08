@@ -39,9 +39,13 @@ create table if not exists tournament (
     "r32":[],"r16":[],"qf":[],"sf":[],"final":[],"champ":null,"third":null
   }'::jsonb,
   vote_locked boolean default false,          -- 投票ロック（全員編集不可）
+  friendlies jsonb not null default '[]'::jsonb, -- 直近の代表戦（TheSportsDBから自動取得）
   last_api_update timestamptz,
   updated_at timestamptz default now()
 );
+
+-- 既存テーブルに friendlies カラムを後付け（再実行安全）
+alter table tournament add column if not exists friendlies jsonb not null default '[]'::jsonb;
 
 drop trigger if exists trg_tour_updated on tournament;
 create trigger trg_tour_updated before update on tournament
