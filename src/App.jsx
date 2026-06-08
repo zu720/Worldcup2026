@@ -738,6 +738,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
   var [loading, setLoading] = useState(true);
   var [err, setErr] = useState("");
   var [open, setOpen] = useState(null); // expanded player
+  var [view, setView] = useState("rank"); // rank | stats
 
   useEffect(function () {
     var live = true;
@@ -787,6 +788,28 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
     }).sort(function (a, b) { return b.score.total - a.score.total; });
   }, [list, koForScore, groupsForScore, liveStarted, tour]);
 
+  // チーム別 投票状況集計
+  var teamStats = useMemo(function () {
+    var n = list.length;
+    var stat = {}; // name -> {r1,r2,oshiA,oshiB,oshiC}
+    AT.forEach(function (t) { stat[t.n] = { n: t.n, o: t.o, r1: 0, r2: 0, oshiA: 0, oshiB: 0, oshiC: 0 }; });
+    list.forEach(function (p) {
+      Object.values(p.gl || {}).forEach(function (arr) {
+        if (arr && arr[0] && stat[arr[0]]) stat[arr[0]].r1++;
+        if (arr && arr[1] && stat[arr[1]]) stat[arr[1]].r2++;
+      });
+      var d = p.des || {};
+      if (d.A && stat[d.A]) stat[d.A].oshiA++;
+      if (d.B && stat[d.B]) stat[d.B].oshiB++;
+      if (d.C && stat[d.C]) stat[d.C].oshiC++;
+    });
+    Object.values(stat).forEach(function (s) {
+      s.breakout = s.r1 + s.r2;             // 突破予想された総数
+      s.oshi = s.oshiA + s.oshiB + s.oshiC; // 推しに選ばれた総数
+    });
+    return { n: n, stat: stat };
+  }, [list]);
+
   if (loading) {
     return <div style={{ padding: 60, textAlign: "center", color: $.dim, fontSize: 14 }}>読み込み中...</div>;
   }
@@ -796,14 +819,31 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
 
   return (
     <div className="fade-in">
-      <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）")} />
+      <Sec icon="🏅" title={view === "rank" ? "ランキング" : "投票状況サマリ"} sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）")} />
+
+      {/* トグル */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[{ k: "rank", l: "🏅 ランキング" }, { k: "stats", l: "📊 投票状況" }].map(function (t) {
+          var act = view === t.k;
+          return (
+            <button key={t.k} onClick={function () { setView(t.k); }}
+              style={{ fontSize: 13, fontWeight: 700, padding: "8px 16px", borderRadius: 8, cursor: "pointer", border: "1px solid " + (act ? $.gold : $.border), background: act ? "rgba(251,191,36,.18)" : "rgba(255,255,255,.03)", color: act ? $.gold : $.txt2, transition: "all .15s" }}>
+              {t.l}
+            </button>
+          );
+        })}
+      </div>
+
       {rows.length === 0 && (
         <div style={{ padding: 60, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12 }}>
           <div style={{ fontSize: 16, fontWeight: 700 }}>まだ予想がありません</div>
           <p style={{ marginTop: 8, fontSize: 12 }}>「予想する」タブで予想を入れて保存してください</p>
         </div>
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+
+      {view === "stats" && rows.length > 0 && <VoteStats teamStats={teamStats} />}
+
+      {view === "rank" && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {rows.map(function (r, i) {
           var isMe = r.name === myName_;
           var isOpen = open === r.name;
@@ -893,7 +933,80 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
             </div>
           );
         })}
+      </div>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// Vote Stats (人気チーム投票状況サマリ)
+// ═══════════════════════════════════════════════════════════
+function VoteStats({ teamStats }) {
+  var n = teamStats.n || 0;
+  var stat = teamStats.stat;
+  var pct = function (c) { return n > 0 ? Math.round((c / n) * 100) : 0; };
+
+  var topBreakout = useMemo(function () {
+    return Object.values(stat).slice().sort(function (a, b) { return b.breakout - a.breakout || b.r1 - a.r1; }).slice(0, 16);
+  }, [stat]);
+  var topOshi = useMemo(function () {
+    return Object.values(stat).filter(function (s) { return s.oshi > 0; }).sort(function (a, b) { return b.oshi - a.oshi; }).slice(0, 12);
+  }, [stat]);
+
+  return (
+    <div className="fade-in">
+      {/* 突破予想ランキング */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 4 }}>🔥 突破予想が多いチーム</div>
+      <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>各チームを1位or2位（＝突破）に予想した人数。バーは濃=1位票・淡=2位票の内訳。</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 26 }}>
+        {topBreakout.map(function (s, i) {
+          return (
+            <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: $.card, border: "1px solid " + $.border }}>
+              <span style={{ fontFamily: fontH, fontSize: 14, color: $.dim, width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5, width: 120, flexShrink: 0, fontSize: 13, fontWeight: 600 }}><Fl n={s.n} s={16} />{s.n}</span>
+              <div style={{ flex: 1, display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(255,255,255,.06)", minWidth: 40 }}>
+                <div title={"1位 " + s.r1 + "票"} style={{ width: pct(s.r1) + "%", background: $.gold, height: "100%" }} />
+                <div title={"2位 " + s.r2 + "票"} style={{ width: pct(s.r2) + "%", background: $.gold + "55", height: "100%" }} />
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, width: 96, textAlign: "right", flexShrink: 0 }}>
+                <span style={{ color: $.gold, fontSize: 14 }}>{s.breakout}</span><span style={{ color: $.dim, fontSize: 10 }}>/{n}</span>
+                <span style={{ color: $.dim, fontSize: 10, marginLeft: 3 }}>(1位{s.r1}/2位{s.r2})</span>
+              </span>
+            </div>
+          );
+        })}
       </div>
+
+      {/* 推し人気ランキング */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 4 }}>🌟 推しに選ばれたチーム</div>
+      <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>推しベスト3に指定された人数。色は内訳（<span style={{ color: DES.A.cl }}>赤=1推し</span>・<span style={{ color: DES.B.cl }}>青=2推し</span>・<span style={{ color: DES.C.cl }}>紫=3推し</span>）。</div>
+      {topOshi.length === 0 ? (
+        <div style={{ padding: 20, textAlign: "center", color: $.dim, fontSize: 12, border: "1px dashed " + $.border, borderRadius: 8 }}>まだ推しの投票がありません</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {topOshi.map(function (s, i) {
+            return (
+              <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, background: $.card, border: "1px solid " + $.border }}>
+                <span style={{ fontFamily: fontH, fontSize: 14, color: $.dim, width: 22, textAlign: "center", flexShrink: 0 }}>{i + 1}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 5, width: 120, flexShrink: 0, fontSize: 13, fontWeight: 600 }}><Fl n={s.n} s={16} />{s.n}</span>
+                <div style={{ flex: 1, display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "rgba(255,255,255,.06)", minWidth: 40 }}>
+                  <div title={"1推し " + s.oshiA + "票"} style={{ width: pct(s.oshiA) + "%", background: DES.A.c, height: "100%" }} />
+                  <div title={"2推し " + s.oshiB + "票"} style={{ width: pct(s.oshiB) + "%", background: DES.B.c, height: "100%" }} />
+                  <div title={"3推し " + s.oshiC + "票"} style={{ width: pct(s.oshiC) + "%", background: DES.C.c, height: "100%" }} />
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, width: 96, textAlign: "right", flexShrink: 0 }}>
+                  <span style={{ color: $.gold, fontSize: 14 }}>{s.oshi}</span><span style={{ color: $.dim, fontSize: 10 }}>人</span>
+                  <span style={{ color: $.dim, fontSize: 10, marginLeft: 3 }}>(
+                    {s.oshiA > 0 && <span style={{ color: DES.A.cl }}>1×{s.oshiA} </span>}
+                    {s.oshiB > 0 && <span style={{ color: DES.B.cl }}>2×{s.oshiB} </span>}
+                    {s.oshiC > 0 && <span style={{ color: DES.C.cl }}>3×{s.oshiC}</span>}
+                  )</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
