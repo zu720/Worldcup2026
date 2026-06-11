@@ -1701,12 +1701,6 @@ function LiveTab({ tour, liveStarted }) {
         </div>
       )}
 
-      {phase === "pre" && wcMatches.length === 0 && (
-        <div style={{ padding: 40, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12, marginBottom: 20 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>⚽ まだ大会開幕前です</div>
-          <p style={{ fontSize: 12 }}>2026年6月11日キックオフ予定。試合が始まると、ここに結果が自動で反映されます。</p>
-        </div>
-      )}
 
       {/* 本戦 速報 */}
       {wcMatches.length > 0 && (
