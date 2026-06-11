@@ -71,6 +71,7 @@ var GRP = {
 };
 var AT = Object.values(GRP).flat();
 var ft = function(n){ return AT.find(function(t){ return t.n===n; }) || null; };
+var TEAM_GRP = {}; Object.keys(GRP).forEach(function(g){ GRP[g].forEach(function(t){ TEAM_GRP[t.n] = g; }); });
 var bsc = function(o){ return Math.round(Math.pow(o,.4)*10)/10; };
 
 // ステージ倍率（累積加算）
@@ -127,7 +128,9 @@ function calcScore(gl, des, ko, groups) {
       var grpStandings = groups && groups[p.group];
       if (grpStandings && grpStandings.length > 0) {
         var actualIdx = grpStandings.findIndex(function (r) { return r && r.n === tn; });
-        if (actualIdx === p.predictedRank && actualIdx <= 1) {
+        // そのグループが1試合でも消化している場合のみ順位ボーナス（試合前は無効）
+        var grpPlayed = grpStandings.some(function (r) { return (r.mp || 0) > 0; });
+        if (grpPlayed && actualIdx === p.predictedRank && actualIdx <= 1) {
           rankBonus = RANK_BONUS[actualIdx];
         }
       }
@@ -141,6 +144,22 @@ function calcScore(gl, des, ko, groups) {
     return { total: Math.round(total * 100) / 100, bd: bd.sort(function (a, b) { return b.pts - a.pts; }) };
   } catch (e) { return { total: 0, bd: [] }; }
 }
+// 暫定ノックアウト: 実際の勝ち上がりが無ければ、試合消化済みグループの上位2を暫定R32とみなす
+function provisionalKo(tour) {
+  var ko = (tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
+  var hasKO = (ko.r32 && ko.r32.length) || (ko.r16 && ko.r16.length) || (ko.qf && ko.qf.length) || (ko.sf && ko.sf.length) || (ko.final && ko.final.length) || ko.champ || ko.third;
+  if (hasKO) return ko; // 実ノックアウトがあればそれを使う
+  var groups = (tour && tour.groups) || {};
+  var r32 = [];
+  Object.keys(groups).forEach(function (g) {
+    var arr = groups[g] || [];
+    var played = arr.some(function (t) { return (t.mp || 0) > 0; });
+    if (!played) return; // 試合前グループは暫定順位を出さない
+    arr.slice(0, 2).forEach(function (t) { if (t && t.n) r32.push(t.n); });
+  });
+  return { r32: r32, r16: [], qf: [], sf: [], final: [], champ: null, third: null, matches: ko.matches };
+}
+
 // 投票傾向の判定（ガチガチ / バランス型 / 大穴狙い）
 function votingStyle(gl, des) {
   try {
@@ -225,7 +244,8 @@ export default function App() {
     if (!k) return false;
     return (k.r32 && k.r32.length) || (k.r16 && k.r16.length) || (k.qf && k.qf.length) || (k.sf && k.sf.length) || (k.final && k.final.length) || k.champ || k.third;
   }, [tour]);
-  var scoreKo = liveStarted ? tour.ko : ko;
+  // 暫定順位込みのko（グループ戦中も暫定ポイントを反映）
+  var scoreKo = useMemo(function () { return provisionalKo(tour); }, [tour]);
   var scoreGroups = (tour && tour.groups) || {};
   var score = useMemo(function () { try { return glComplete ? calcScore(gl, des, scoreKo, scoreGroups) : null; } catch (e) { return null; } }, [gl, des, scoreKo, scoreGroups, glComplete]);
 
@@ -799,12 +819,11 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
     return function () { live = false; if (unsub) unsub(); };
   }, []);
 
-  var emptyKo = { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
-  var koForScore = liveStarted ? (tour && tour.ko) || emptyKo : emptyKo;
+  var koForScore = provisionalKo(tour); // 暫定順位込み
   var groupsForScore = (tour && tour.groups) || {};
 
   var rows = useMemo(function () {
-    var actualR32 = (liveStarted && tour && tour.ko && tour.ko.r32) || [];
+    var actualR32 = koForScore.r32 || []; // 暫定R32（試合消化グループの上位2）
     var hasGroupsData = Object.values(groupsForScore).some(function (arr) { return arr && arr.length > 0; });
     return list.map(function (p) {
       var sc = (function () {
@@ -867,11 +886,11 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
 
   return (
     <div className="fade-in">
-      <Sec icon="🏅" title={view === "rank" ? "ランキング" : "投票状況サマリ"} sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）")} />
+      <Sec icon="🏅" title={view === "rank" ? "ランキング" : "投票一覧"} sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）")} />
 
       {/* トグル */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        {[{ k: "rank", l: "🏅 ランキング" }, { k: "stats", l: "📊 投票状況" }].map(function (t) {
+        {[{ k: "rank", l: "🏅 ランキング" }, { k: "matrix", l: "📋 投票一覧" }].map(function (t) {
           var act = view === t.k;
           return (
             <button key={t.k} onClick={function () { setView(t.k); }}
@@ -889,7 +908,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
         </div>
       )}
 
-      {view === "stats" && rows.length > 0 && <VoteStats teamStats={teamStats} list={list} />}
+      {view === "matrix" && rows.length > 0 && <MatrixTab myName={myName_} tour={tour} list={list} />}
 
       {view === "rank" && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {rows.map(function (r, i) {
@@ -1455,6 +1474,137 @@ function AdminMembers() {
 // ═══════════════════════════════════════════════════════════
 // Live Tab (actual tournament progress)
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// Matrix Tab (メンバー投票一覧: 横=名前, 縦=推し/グループ選択)
+// ═══════════════════════════════════════════════════════════
+function MatrixTab({ myName: myName_, tour, list }) {
+  list = list || [];
+  // 実際の結果（正解判定用）
+  var actualGroups = (tour && tour.groups) || {};
+
+  var members = useMemo(function () {
+    return list.slice().sort(function (a, b) { return (a.name || "").localeCompare(b.name || "", "ja"); });
+  }, [list]);
+
+  // 行定義: 推し3 + 各グループ(1位/2位)
+  var rowDefs = useMemo(function () {
+    var r = [
+      { key: "A", label: "1推し", kind: "oshi", get: function (p) { return p.des && p.des.A; }, accent: DES.A.cl },
+      { key: "B", label: "2推し", kind: "oshi", get: function (p) { return p.des && p.des.B; }, accent: DES.B.cl },
+      { key: "C", label: "3推し", kind: "oshi", get: function (p) { return p.des && p.des.C; }, accent: DES.C.cl },
+    ];
+    Object.keys(GRP).forEach(function (g) {
+      r.push({ key: g + "1", label: g + " 1位", kind: "grp", grp: g, pos: 0, get: function (p) { return (p.gl && p.gl[g] || [])[0]; } });
+      r.push({ key: g + "2", label: g + " 2位", kind: "grp", grp: g, pos: 1, get: function (p) { return (p.gl && p.gl[g] || [])[1]; } });
+    });
+    return r;
+  }, []);
+
+  // 実際にそのグループ順位を当てているか
+  function isCorrect(rowDef, team) {
+    if (rowDef.kind !== "grp" || !team) return false;
+    var stand = actualGroups[rowDef.grp];
+    if (!stand || !stand.length) return false;
+    return stand[rowDef.pos] && stand[rowDef.pos].n === team;
+  }
+
+  // 各行の最多得票（人気）
+  function popularOf(rd) {
+    var c = {};
+    members.forEach(function (m) { var t = rd.get(m); if (t) c[t] = (c[t] || 0) + 1; });
+    var best = null, bn = 0;
+    Object.keys(c).forEach(function (t) { if (c[t] > bn) { bn = c[t]; best = t; } });
+    return best ? { team: best, n: bn } : null;
+  }
+
+  // 尖った投票（人と違う予想）ベスト3
+  var contrarianTop = useMemo(function () {
+    var N = members.length; if (N === 0) return [];
+    var popG = {}, popO = {};
+    members.forEach(function (m) {
+      Object.keys(GRP).forEach(function (g) { [0, 1].forEach(function (p) { var t = (m.gl && m.gl[g] || [])[p]; if (t) popG[g + "|" + p + "|" + t] = (popG[g + "|" + p + "|" + t] || 0) + 1; }); });
+      ["A", "B", "C"].forEach(function (s) { var t = m.des && m.des[s]; if (t) popO[t] = (popO[t] || 0) + 1; });
+    });
+    return members.map(function (m) {
+      var sc = 0, cnt = 0;
+      Object.keys(GRP).forEach(function (g) { [0, 1].forEach(function (p) { var t = (m.gl && m.gl[g] || [])[p]; if (t) { sc += (N - (popG[g + "|" + p + "|" + t] || 1)); cnt++; } }); });
+      ["A", "B", "C"].forEach(function (s) { var t = m.des && m.des[s]; if (t) { sc += (N - (popO[t] || 1)); cnt++; } });
+      return { name: m.name, des: m.des || {}, score: cnt ? sc / cnt : 0, pct: N > 1 ? Math.round((cnt ? sc / cnt : 0) / (N - 1) * 100) : 0 };
+    }).sort(function (a, b) { return b.score - a.score; }).slice(0, 3);
+  }, [members]);
+
+  var cellW = 96, LBL = 46, POP = 66;
+  return (
+    <div className="fade-in">
+      {/* 尖った投票ベスト3 */}
+      {contrarianTop.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: $.gold, marginBottom: 6 }}>🌶 もっとも尖った投票 ベスト3 <span style={{ fontSize: 10, color: $.dim, fontWeight: 400 }}>（みんなと違う予想ほど高い）</span></div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {contrarianTop.map(function (c, i) {
+              return (
+                <div key={c.name} className="lift" style={{ flex: "1 1 200px", minWidth: 170, borderRadius: 10, border: "1px solid " + (i === 0 ? $.red + "70" : $.border), background: i === 0 ? "rgba(248,113,113,.10)" : $.card, padding: "8px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontFamily: fontH, fontSize: 18, color: i === 0 ? $.redL : i === 1 ? "#bbb" : "#cd7f32" }}>{i + 1}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: c.name === myName_ ? $.gold : $.txt }}>{c.name}</span>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: $.redL, fontWeight: 700 }}>独自度 {c.pct}%</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: $.dim, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {["A", "B", "C"].map(function (k) { var n = c.des[k]; return n ? <span key={k} style={{ marginRight: 6, color: DES[k].cl }}><Fl n={n} s={11} />{n}</span> : null; })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {members.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12 }}>まだ予想がありません</div>
+      ) : (
+        <div style={{ overflow: "auto", maxHeight: "72vh", border: "1px solid " + $.border, borderRadius: 10 }}>
+          <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th className="mx-lab" style={{ position: "sticky", left: 0, top: 0, zIndex: 4, background: "#13233f", color: $.gold, fontSize: 9, padding: "6px 4px", textAlign: "left", borderRight: "1px solid " + $.border, borderBottom: "2px solid " + $.border, minWidth: LBL, maxWidth: LBL }}>項目</th>
+                <th className="mx-pop" style={{ position: "sticky", left: LBL, top: 0, zIndex: 4, background: "#1c2f17", color: $.pitchL, fontSize: 9, padding: "6px 4px", textAlign: "left", borderRight: "2px solid " + $.border, borderBottom: "2px solid " + $.border, minWidth: POP, maxWidth: POP }}>人気</th>
+                {members.map(function (m) {
+                  var isMe = m.name === myName_;
+                  return <th key={m.name} className="mx-name" style={{ position: "sticky", top: 0, zIndex: 2, background: isMe ? "#2a3f1f" : "#13233f", color: isMe ? $.gold : $.txt, fontSize: 10, fontWeight: 700, padding: "6px 6px", borderBottom: "2px solid " + $.border, borderRight: "1px solid " + $.border, minWidth: cellW, maxWidth: cellW, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={m.name}>{m.name}</th>;
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {rowDefs.map(function (rd, ri) {
+                var isOshi = rd.kind === "oshi";
+                var groupStart = rd.kind === "grp" && rd.pos === 0;
+                var pop = popularOf(rd);
+                return (
+                  <tr key={rd.key}>
+                    <td className="mx-lab" style={{ position: "sticky", left: 0, zIndex: 1, background: isOshi ? "rgba(251,191,36,.14)" : "#0f1d33", color: isOshi ? (rd.accent) : $.txt2, fontWeight: 700, padding: "5px 4px", borderRight: "1px solid " + $.border, borderTop: groupStart ? "2px solid " + $.border : "1px solid rgba(255,255,255,.06)", whiteSpace: "nowrap", fontSize: 9, minWidth: LBL, maxWidth: LBL }}>{rd.label}</td>
+                    <td className="mx-pop" title={pop ? pop.team + " (" + pop.n + "人)" : ""} style={{ position: "sticky", left: LBL, zIndex: 1, background: "#13230f", borderRight: "2px solid " + $.border, borderTop: groupStart ? "2px solid " + $.border : "1px solid rgba(255,255,255,.06)", padding: "5px 4px", whiteSpace: "nowrap", overflow: "hidden", minWidth: POP, maxWidth: POP, fontSize: 10 }}>
+                      {pop ? <span style={{ display: "inline-flex", alignItems: "center", gap: 2, color: $.txt }}><Fl n={pop.team} s={11} />{pop.team}</span> : <span style={{ color: $.dim }}>—</span>}
+                    </td>
+                    {members.map(function (m) {
+                      var team = rd.get(m);
+                      var correct = isCorrect(rd, team);
+                      return (
+                        <td key={m.name} className="mx-cell" title={team || ""} style={{ padding: "4px 6px", borderRight: "1px solid rgba(255,255,255,.05)", borderTop: groupStart ? "2px solid " + $.border : "1px solid rgba(255,255,255,.04)", background: isOshi ? "rgba(251,191,36,.05)" : correct ? "rgba(34,197,94,.16)" : "transparent", whiteSpace: "nowrap", color: team ? $.txt : $.dim }}>
+                          {team ? <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Fl n={team} s={12} />{team}{correct && <span style={{ color: $.pitchL, marginLeft: 2 }}>◯</span>}</span> : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: $.dim, marginTop: 8 }}>※ 横スクロールで全員。左の固定列「人気」＝各項目で最も多く選ばれたチーム。緑＝順位的中。</div>
+    </div>
+  );
+}
+
 function LiveTab({ tour, liveStarted }) {
   var phase = (tour && tour.phase) || "pre";
   var groups = (tour && tour.groups) || {};
@@ -1481,7 +1631,77 @@ function LiveTab({ tour, liveStarted }) {
     <div className="fade-in">
       <Sec icon="📡" title="大会途中経過" sub={"現在のフェーズ: " + (PHASE_LABEL[phase] || phase) + (lastUpd ? "　/　最終更新: " + new Date(lastUpd).toLocaleString("ja-JP") : "")} />
 
-      {!liveStarted && (
+      {(
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 10 }}>📊 グループ星取表</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 10 }}>
+            {Object.keys(GRP).map(function (g) {
+              // 試合がまだのグループも枠を表示（0スタート）
+              var rows0 = (groups[g] && groups[g].length) ? groups[g] : GRP[g].map(function (t) { return { n: t.n, mp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 }; });
+              // 勝点→得失点差→総得点 で並べ替え（同勝点は得失点差で順位）
+              var rows = rows0.slice().sort(function (a, b) {
+                return (b.pts || 0) - (a.pts || 0) || ((b.gf || 0) - (b.ga || 0)) - ((a.gf || 0) - (a.ga || 0)) || (b.gf || 0) - (a.gf || 0);
+              });
+              // このグループの試合（両国がこのグループ）
+              var gms = wcMatches.filter(function (m) { return TEAM_GRP[m.home] === g && TEAM_GRP[m.away] === g; }).sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
+              return (
+                <div key={g} style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, overflow: "hidden" }}>
+                  <div style={{ padding: "8px 12px", background: "rgba(245,197,24,.08)", borderBottom: "1px solid " + $.border, fontWeight: 700, color: $.gold, fontSize: 13 }}>グループ {g}</div>
+                  <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ color: $.dim }}>
+                        <th style={{ padding: "4px 8px", textAlign: "left" }}>チーム</th>
+                        <th style={{ padding: "4px 4px" }}>試</th>
+                        <th style={{ padding: "4px 4px" }}>勝</th>
+                        <th style={{ padding: "4px 4px" }}>分</th>
+                        <th style={{ padding: "4px 4px" }}>敗</th>
+                        <th style={{ padding: "4px 4px" }}>得失</th>
+                        <th style={{ padding: "4px 8px", color: $.gold }}>勝点</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(function (r, i) {
+                        var diff = (r.gf || 0) - (r.ga || 0);
+                        var qual = i < 2;
+                        return (
+                          <tr key={r.n + i} style={{ borderTop: "1px solid " + $.border, background: qual ? "rgba(34,197,94,.06)" : "transparent" }}>
+                            <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}><Fl n={r.n} s={12} />{r.n}{(function () { var t = ft(r.n); return t ? <span style={{ marginLeft: 5, fontSize: 9, color: $.goldD, fontWeight: 700 }} title="基礎点（オッズ調整値）">x{bsc(t.o).toFixed(1)}</span> : null; })()}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center", color: $.dim }}>{r.mp || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.w || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.d || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.l || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center", color: diff > 0 ? $.pitchL : diff < 0 ? $.redL : $.dim }}>{diff > 0 ? "+" : ""}{diff}</td>
+                            <td style={{ padding: "4px 8px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{r.pts || 0}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {gms.length > 0 && (
+                    <div style={{ borderTop: "1px solid " + $.border, padding: "6px 10px", background: "rgba(0,0,0,.15)" }}>
+                      <div style={{ fontSize: 9, color: $.dim, marginBottom: 3 }}>試合結果・日程</div>
+                      {gms.map(function (m, mi) {
+                        var done = m.hs != null && m.as != null;
+                        var hw = done && m.hs > m.as, aw = done && m.as > m.hs;
+                        return (
+                          <div key={mi} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, padding: "2px 0", color: $.txt2 }}>
+                            <span style={{ width: 34, color: $.dim, flexShrink: 0, fontSize: 9 }}>{(m.date || "").slice(5)}</span>
+                            <span style={{ flex: 1, textAlign: "right", fontWeight: hw ? 700 : 400, color: hw ? $.txt : $.txt2, whiteSpace: "nowrap", overflow: "hidden" }}>{m.home}</span>
+                            <span style={{ fontFamily: fontH, color: done ? $.gold : $.dim, minWidth: 28, textAlign: "center" }}>{done ? m.hs + "-" + m.as : "vs"}</span>
+                            <span style={{ flex: 1, textAlign: "left", fontWeight: aw ? 700 : 400, color: aw ? $.txt : $.txt2, whiteSpace: "nowrap", overflow: "hidden" }}>{m.away}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {phase === "pre" && wcMatches.length === 0 && (
         <div style={{ padding: 40, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12, marginBottom: 20 }}>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>⚽ まだ大会開幕前です</div>
           <p style={{ fontSize: 12 }}>2026年6月11日キックオフ予定。試合が始まると、ここに結果が自動で反映されます。</p>
@@ -1561,53 +1781,6 @@ function LiveTab({ tour, liveStarted }) {
                       {isWCa && <Fl n={m.away} s={14} />}{m.away}
                     </span>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {Object.keys(groups).length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 10 }}>📊 グループ星取表</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 10 }}>
-            {Object.keys(GRP).map(function (g) {
-              var rows = groups[g];
-              if (!rows || !rows.length) return null;
-              return (
-                <div key={g} style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, overflow: "hidden" }}>
-                  <div style={{ padding: "8px 12px", background: "rgba(245,197,24,.08)", borderBottom: "1px solid " + $.border, fontWeight: 700, color: $.gold, fontSize: 13 }}>グループ {g}</div>
-                  <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ color: $.dim }}>
-                        <th style={{ padding: "4px 8px", textAlign: "left" }}>チーム</th>
-                        <th style={{ padding: "4px 4px" }}>試</th>
-                        <th style={{ padding: "4px 4px" }}>勝</th>
-                        <th style={{ padding: "4px 4px" }}>分</th>
-                        <th style={{ padding: "4px 4px" }}>敗</th>
-                        <th style={{ padding: "4px 4px" }}>得失</th>
-                        <th style={{ padding: "4px 8px", color: $.gold }}>勝点</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(function (r, i) {
-                        var diff = (r.gf || 0) - (r.ga || 0);
-                        var qual = i < 2;
-                        return (
-                          <tr key={r.n + i} style={{ borderTop: "1px solid " + $.border, background: qual ? "rgba(34,197,94,.06)" : "transparent" }}>
-                            <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}><Fl n={r.n} s={12} />{r.n}{(function () { var t = ft(r.n); return t ? <span style={{ marginLeft: 5, fontSize: 9, color: $.goldD, fontWeight: 700 }} title="基礎点（オッズ調整値）">x{bsc(t.o).toFixed(1)}</span> : null; })()}</td>
-                            <td style={{ padding: "4px 4px", textAlign: "center", color: $.dim }}>{r.mp || 0}</td>
-                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.w || 0}</td>
-                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.d || 0}</td>
-                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.l || 0}</td>
-                            <td style={{ padding: "4px 4px", textAlign: "center", color: diff > 0 ? $.pitchL : diff < 0 ? $.redL : $.dim }}>{diff > 0 ? "+" : ""}{diff}</td>
-                            <td style={{ padding: "4px 8px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{r.pts || 0}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
                 </div>
               );
             })}
@@ -1860,6 +2033,10 @@ function Styles() {
         .lb-score-block > div:first-child { font-size: 18px !important; }
         .lb-arrow { font-size: 11px !important; }
         .lb-expand-bonuses { display: flex !important; }
+        /* 投票一覧マトリクスをスマホでコンパクトに */
+        .mx-name, .mx-cell { min-width: 50px !important; max-width: 50px !important; font-size: 8px !important; padding: 3px 2px !important; overflow: hidden !important; }
+        .mx-cell span { gap: 1px !important; }
+        .mx-lab, .mx-pop { font-size: 8px !important; padding: 3px 3px !important; }
       }
     ` }} />
   );

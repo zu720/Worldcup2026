@@ -178,10 +178,14 @@ export async function getVisitStats() {
 
 /* ── realtime subscriptions (supabase only) ── */
 
+// チャンネル名は購読ごとに一意にする（同名チャンネルへの二重subscribeはSupabaseがエラーを投げるため）
+let _chanSeq = 0;
+function uniqChannel() { _chanSeq += 1; return _chanSeq + '-' + Date.now(); }
+
 export function subscribePredictions(onChange) {
   if (!hasSupabase) return () => {};
   const channel = supabase
-    .channel('pred-changes')
+    .channel('pred-' + uniqChannel())
     .on('postgres_changes',
         { event: '*', schema: 'public', table: 'predictions' },
         () => onChange())
@@ -192,7 +196,7 @@ export function subscribePredictions(onChange) {
 export function subscribeTournament(onChange) {
   if (!hasSupabase) return () => {};
   const channel = supabase
-    .channel('tour-changes')
+    .channel('tour-' + uniqChannel())
     .on('postgres_changes',
         { event: '*', schema: 'public', table: 'tournament' },
         () => onChange())
