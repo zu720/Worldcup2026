@@ -1460,7 +1460,11 @@ function LiveTab({ tour, liveStarted }) {
   var groups = (tour && tour.groups) || {};
   var ko = (tour && tour.ko) || {};
   var friendlies = (tour && tour.friendlies) || [];
+  var wcMatches = (tour && tour.ko && tour.ko.matches) || [];
   var lastUpd = tour && tour.last_api_update;
+  // 本戦: 終了は新しい順、未消化は近い順
+  var wcFinished = wcMatches.filter(function (m) { return m.hs != null && m.as != null; }).sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); });
+  var wcUpcoming = wcMatches.filter(function (m) { return m.hs == null || m.as == null; }).sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
 
   // 実データからブラケット表示用に派生
   var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
@@ -1481,6 +1485,53 @@ function LiveTab({ tour, liveStarted }) {
         <div style={{ padding: 40, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12, marginBottom: 20 }}>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>⚽ まだ大会開幕前です</div>
           <p style={{ fontSize: 12 }}>2026年6月11日キックオフ予定。試合が始まると、ここに結果が自動で反映されます。</p>
+        </div>
+      )}
+
+      {/* 本戦 速報 */}
+      {wcMatches.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 4 }}>⚡ 本戦 速報</div>
+          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>FIFA W杯2026 本戦の試合結果・日程（毎日自動更新）。</div>
+          {wcFinished.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: $.pitchL, fontWeight: 700, marginBottom: 6 }}>● 結果（{wcFinished.length}試合）</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 8 }}>
+                {wcFinished.slice(0, 24).map(function (m, i) {
+                  var hw = m.hs > m.as, aw = m.as > m.hs;
+                  return (
+                    <div key={i} className="lift" style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, padding: "8px 12px" }}>
+                      <div style={{ fontSize: 9, color: $.dim, marginBottom: 3 }}>{m.date}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                        <span style={{ flex: 1, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontWeight: hw ? 700 : 400, color: hw ? $.txt : $.txt2 }}>{m.home}<Fl n={m.home} s={14} /></span>
+                        <span style={{ fontFamily: fontH, fontSize: 17, color: $.gold, padding: "0 4px", whiteSpace: "nowrap" }}>{m.hs}<span style={{ color: $.dim }}>-</span>{m.as}</span>
+                        <span style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 4, fontWeight: aw ? 700 : 400, color: aw ? $.txt : $.txt2 }}><Fl n={m.away} s={14} />{m.away}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {wcUpcoming.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, color: $.dim, fontWeight: 700, marginBottom: 6 }}>○ これから（直近{Math.min(wcUpcoming.length, 12)}試合）</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 8 }}>
+                {wcUpcoming.slice(0, 12).map(function (m, i) {
+                  return (
+                    <div key={i} style={{ borderRadius: 10, border: "1px dashed " + $.border, background: "rgba(255,255,255,.02)", padding: "8px 12px", opacity: 0.85 }}>
+                      <div style={{ fontSize: 9, color: $.dim, marginBottom: 3 }}>{m.date}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                        <span style={{ flex: 1, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, color: $.txt2 }}>{m.home}<Fl n={m.home} s={13} /></span>
+                        <span style={{ fontSize: 10, color: $.dim }}>vs</span>
+                        <span style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 4, color: $.txt2 }}><Fl n={m.away} s={13} />{m.away}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

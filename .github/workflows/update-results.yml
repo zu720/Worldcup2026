@@ -4,221 +4,127 @@ on:
   schedule:
     # 大会期間中（6-7月）は2時間ごと
     - cron: '0 */2 * 6,7 *'
-    # 通年 毎日1回（開幕前の親善試合更新用 / UTC 03:00）
+    # 通年 毎日1回（親善試合・日程更新用 / UTC 03:00）
     - cron: '0 3 * * *'
-  workflow_dispatch: # 手動実行も可
+  workflow_dispatch:
 
 jobs:
   update-results:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch and update results
+      - name: Fetch WC2026 + friendlies (TheSportsDB) → Supabase
         env:
-          APISPORTS_KEY: ${{ secrets.APISPORTS_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           cat << 'SCRIPT' > update.mjs
           /**
-           * FIFA W杯2026 結果取得 (API-Football / api-sports.io 直接)
-           * 無料tier: 100req/日 → 2時間ごとでも12req/日で余裕
-           *
-           * 必要な GitHub Secrets:
-           *   APISPORTS_KEY        … https://dashboard.api-football.com/register で登録して取得
-           *   SUPABASE_URL         … https://xxx.supabase.co
-           *   SUPABASE_SERVICE_KEY … service_role の JWT（anon ではない！）
+           * FIFA W杯2026 結果＋出場国の親善試合を TheSportsDB(無料・公開API) から取得し、
+           * Supabase の tournament に書き込む。APIキー不要（公開キー "3"）。
+           * 必要 Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY(service_role)
            */
+          const URL = process.env.SUPABASE_URL;
+          const KEY = process.env.SUPABASE_SERVICE_KEY;
+          const LEAGUE = 4429, SEASON = 2026;
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-          // FIFA World Cup の league.id = 1
-          const LEAGUE_ID = 1;
-          const SEASON = 2026;
-          const API_BASE = 'https://v3.football.api-sports.io';
+          const NM = {'Mexico':'メキシコ','South Africa':'南アフリカ','South Korea':'韓国','Korea Republic':'韓国','Czech Republic':'チェコ','Czechia':'チェコ','Canada':'カナダ','Bosnia and Herzegovina':'ボスニア','Bosnia-Herzegovina':'ボスニア','Qatar':'カタール','Switzerland':'スイス','Brazil':'ブラジル','Morocco':'モロッコ','Haiti':'ハイチ','Scotland':'スコットランド','United States':'アメリカ','USA':'アメリカ','Paraguay':'パラグアイ','Australia':'オーストラリア','Turkey':'トルコ','Turkiye':'トルコ','Germany':'ドイツ','Curacao':'キュラソー','Ivory Coast':'コートジボワール','Ecuador':'エクアドル','Netherlands':'オランダ','Japan':'日本','Sweden':'スウェーデン','Tunisia':'チュニジア','Belgium':'ベルギー','Egypt':'エジプト','Iran':'イラン','New Zealand':'ニュージーランド','Spain':'スペイン','Cape Verde':'カーボベルデ','Saudi Arabia':'サウジアラビア','Uruguay':'ウルグアイ','France':'フランス','Senegal':'セネガル','Iraq':'イラク','Norway':'ノルウェー','Argentina':'アルゼンチン','Algeria':'アルジェリア','Austria':'オーストリア','Jordan':'ヨルダン','Portugal':'ポルトガル','DR Congo':'DRコンゴ','Congo DR':'DRコンゴ','Uzbekistan':'ウズベキスタン','Colombia':'コロンビア','England':'イングランド','Croatia':'クロアチア','Ghana':'ガーナ','Panama':'パナマ'};
+          const ja = (n) => NM[n] || n;
+          const GRP = {A:["メキシコ","南アフリカ","韓国","チェコ"],B:["カナダ","ボスニア","カタール","スイス"],C:["ブラジル","モロッコ","ハイチ","スコットランド"],D:["アメリカ","パラグアイ","オーストラリア","トルコ"],E:["ドイツ","キュラソー","コートジボワール","エクアドル"],F:["オランダ","日本","スウェーデン","チュニジア"],G:["ベルギー","エジプト","イラン","ニュージーランド"],H:["スペイン","カーボベルデ","サウジアラビア","ウルグアイ"],I:["フランス","セネガル","イラク","ノルウェー"],J:["アルゼンチン","アルジェリア","オーストリア","ヨルダン"],K:["ポルトガル","DRコンゴ","ウズベキスタン","コロンビア"],L:["イングランド","クロアチア","ガーナ","パナマ"]};
+          const TEAM_GRP = {}; Object.entries(GRP).forEach(([g,ts]) => ts.forEach(t => TEAM_GRP[t]=g));
+          const SDB = {"メキシコ":"134497","南アフリカ":"136482","韓国":"134517","チェコ":"133904","カナダ":"140073","ボスニア":"149845","カタール":"136472","スイス":"134506","ブラジル":"134496","モロッコ":"136139","ハイチ":"140175","スコットランド":"136450","アメリカ":"134514","パラグアイ":"136471","オーストラリア":"134500","トルコ":"135985","ドイツ":"133907","キュラソー":"140271","コートジボワール":"134502","エクアドル":"134507","オランダ":"133905","日本":"134503","スウェーデン":"133916","チュニジア":"136142","ベルギー":"134515","エジプト":"136138","イラン":"134511","ニュージーランド":"137449","スペイン":"133909","カーボベルデ":"136477","サウジアラビア":"136137","ウルグアイ":"134504","フランス":"133913","セネガル":"136143","イラク":"140148","ノルウェー":"136516","アルゼンチン":"134509","アルジェリア":"134516","オーストリア":"135986","ヨルダン":"140145","ポルトガル":"133908","DRコンゴ":"136475","ウズベキスタン":"140151","コロンビア":"134501","イングランド":"133914","クロアチア":"133912","ガーナ":"134513","パナマ":"136141"};
 
-          async function api(path) {
-            const res = await fetch(`${API_BASE}${path}`, {
-              headers: {
-                'x-apisports-key': process.env.APISPORTS_KEY,
-              },
+          async function patch(data) {
+            const res = await fetch(`${URL}/rest/v1/tournament?id=eq.wc2026`, {
+              method: 'PATCH',
+              headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify(data),
             });
-            if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0,200)}`);
-            return res.json();
+            if (!res.ok) throw new Error('Supabase ' + res.status + ': ' + (await res.text()).slice(0,200));
           }
-
-          async function patchSupabase(table, idCol, idVal, data) {
-            const res = await fetch(
-              `${process.env.SUPABASE_URL}/rest/v1/${table}?${idCol}=eq.${idVal}`,
-              {
-                method: 'PATCH',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'apikey': process.env.SUPABASE_SERVICE_KEY,
-                  'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
-                  'Prefer': 'return=minimal',
-                },
-                body: JSON.stringify(data),
-              }
-            );
-            if (!res.ok) throw new Error(`Supabase: ${(await res.text()).slice(0,200)}`);
-          }
-
-          // 英→日 名前マップ
-          const NM = {
-            'Mexico':'メキシコ','South Africa':'南アフリカ','Korea Republic':'韓国','South Korea':'韓国',
-            'Czech Republic':'チェコ','Czechia':'チェコ',
-            'Canada':'カナダ','Bosnia and Herzegovina':'ボスニア','Bosnia & Herzegovina':'ボスニア','Bosnia-Herzegovina':'ボスニア',
-            'Qatar':'カタール','Switzerland':'スイス',
-            'Brazil':'ブラジル','Morocco':'モロッコ','Haiti':'ハイチ','Scotland':'スコットランド',
-            'United States':'アメリカ','USA':'アメリカ','Paraguay':'パラグアイ',
-            'Australia':'オーストラリア','Turkey':'トルコ','Türkiye':'トルコ','Turkiye':'トルコ',
-            'Germany':'ドイツ','Curaçao':'キュラソー','Curacao':'キュラソー',
-            'Ivory Coast':'コートジボワール',"Côte d'Ivoire":'コートジボワール',
-            'Ecuador':'エクアドル',
-            'Netherlands':'オランダ','Japan':'日本','Sweden':'スウェーデン','Tunisia':'チュニジア',
-            'Belgium':'ベルギー','Egypt':'エジプト','Iran':'イラン','IR Iran':'イラン',
-            'New Zealand':'ニュージーランド',
-            'Spain':'スペイン','Cape Verde':'カーボベルデ','Cabo Verde':'カーボベルデ',
-            'Saudi Arabia':'サウジアラビア','Uruguay':'ウルグアイ',
-            'France':'フランス','Senegal':'セネガル','Iraq':'イラク','Norway':'ノルウェー',
-            'Argentina':'アルゼンチン','Algeria':'アルジェリア','Austria':'オーストリア','Jordan':'ヨルダン',
-            'Portugal':'ポルトガル','DR Congo':'DRコンゴ','Congo DR':'DRコンゴ',
-            'Uzbekistan':'ウズベキスタン','Colombia':'コロンビア',
-            'England':'イングランド','Croatia':'クロアチア','Ghana':'ガーナ','Panama':'パナマ',
-          };
-          const ja = (s) => NM[s] || s;
-
-          // KOステージ → 内部キー
-          const STAGE = {
-            'Round of 32': 'r32', '1/16 Finals': 'r32', 'Round of 16': 'r16', '1/8 Finals': 'r16',
-            'Quarter-finals': 'qf', 'Quarterfinals': 'qf',
-            'Semi-finals': 'sf', 'Semifinals': 'sf',
-            '3rd Place Final': 'third', 'Third Place': 'third',
-            'Final': 'final',
-          };
 
           async function main() {
-            if (!process.env.APISPORTS_KEY || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
-              console.log('Secrets not set, skipping.');
-              return;
+            if (!URL || !KEY) { console.log('Secrets未設定, skip'); return; }
+
+            // ── 本戦（WC2026, TheSportsDB id=4429）──
+            let all = [];
+            for (let r = 1; r <= 8; r++) {
+              try {
+                const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsround.php?id=${LEAGUE}&r=${r}&s=${SEASON}`);
+                const d = await res.json();
+                (d.events || []).forEach(e => all.push(e));
+              } catch (e) {}
+              await sleep(1500);
             }
+            const matches = all.map(e => ({
+              date: e.dateEvent || '', home: ja(e.strHomeTeam || ''), away: ja(e.strAwayTeam || ''),
+              hs: (e.intHomeScore == null || e.intHomeScore === '') ? null : Number(e.intHomeScore),
+              as: (e.intAwayScore == null || e.intAwayScore === '') ? null : Number(e.intAwayScore),
+              round: Number(e.intRound || 0), status: e.strStatus || '',
+            })).sort((a,b) => (a.date||'').localeCompare(b.date||''));
 
-            // ── 1) グループ星取表 ──
-            console.log('Fetching standings...');
-            let groups = {};
-            let phase = 'pre';
-            try {
-              const data = await api(`/standings?league=${LEAGUE_ID}&season=${SEASON}`);
-              const arr = data.response?.[0]?.league?.standings || [];
-              arr.forEach((tbl, i) => {
-                const letter = String.fromCharCode(65 + i); // A..L
-                groups[letter] = tbl.map((row) => ({
-                  n: ja(row.team.name),
-                  mp: row.all.played, w: row.all.win, d: row.all.draw, l: row.all.lose,
-                  gf: row.all.goals.for, ga: row.all.goals.against, pts: row.points,
-                }));
-              });
-              if (Object.keys(groups).length > 0) phase = 'groups';
-            } catch (e) { console.warn('standings fail:', e.message); }
-
-            // ── 2) 試合結果 ──
-            console.log('Fetching fixtures...');
-            const ko = { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
-            try {
-              const data = await api(`/fixtures?league=${LEAGUE_ID}&season=${SEASON}&status=FT`);
-              const fxs = data.response || [];
-              fxs.forEach((f) => {
-                const round = f.league.round || '';
-                let stage = null;
-                for (const k of Object.keys(STAGE)) {
-                  if (round.toLowerCase().includes(k.toLowerCase())) { stage = STAGE[k]; break; }
-                }
-                if (!stage) return;
-                const home = f.teams.home, away = f.teams.away;
-                const winner = home.winner ? home : away.winner ? away : null;
-                if (!winner) return;
-                const wn = ja(winner.name);
-                if (stage === 'third') { ko.third = wn; return; }
-                if (stage === 'final') {
-                  if (!ko.final.includes(ja(home.name))) ko.final.push(ja(home.name));
-                  if (!ko.final.includes(ja(away.name))) ko.final.push(ja(away.name));
-                  ko.champ = wn;
-                  return;
-                }
-                if (!ko[stage].includes(wn)) ko[stage].push(wn);
-              });
-              if (ko.champ) phase = 'done';
-              else if (ko.final.length > 0) phase = 'final';
-              else if (ko.sf.length > 0) phase = 'sf';
-              else if (ko.qf.length > 0) phase = 'qf';
-              else if (ko.r16.length > 0) phase = 'r16';
-              else if (ko.r32.length > 0) phase = 'r32';
-            } catch (e) { console.warn('fixtures fail:', e.message); }
-
-            console.log('phase:', phase, '/ groups:', Object.keys(groups).length, '/ ko:', JSON.stringify(ko).slice(0, 240));
-
-            await patchSupabase('tournament', 'id', 'wc2026', {
-              phase, groups, ko, last_api_update: new Date().toISOString(),
+            // グループ星取表（round<=3 の終了試合から計算）
+            const groups = {};
+            Object.keys(GRP).forEach(g => { groups[g] = GRP[g].map(n => ({n,mp:0,w:0,d:0,l:0,gf:0,ga:0,pts:0})); });
+            const find = (g,n) => groups[g].find(t => t.n===n);
+            matches.forEach(m => {
+              if (m.round>3 || m.hs==null || m.as==null) return;
+              const g = TEAM_GRP[m.home]; if (!g || TEAM_GRP[m.away]!==g) return;
+              const H=find(g,m.home), A=find(g,m.away); if (!H||!A) return;
+              H.mp++;A.mp++; H.gf+=m.hs;H.ga+=m.as; A.gf+=m.as;A.ga+=m.hs;
+              if (m.hs>m.as){H.w++;A.l++;H.pts+=3;} else if (m.hs<m.as){A.w++;H.l++;A.pts+=3;} else {H.d++;A.d++;H.pts++;A.pts++;}
             });
-            console.log('✅ Supabase (WC) updated.');
+            Object.keys(groups).forEach(g => groups[g].sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf));
 
-            // ── 3) 直近の代表戦（TheSportsDB, 無料）──
-            // 48出場国の直近1試合を取得し、重複除去して friendlies に保存
-            const SDB = {
-              "メキシコ":"134497","南アフリカ":"136482","韓国":"134517","チェコ":"133904",
-              "カナダ":"140073","ボスニア":"149845","カタール":"136472","スイス":"134506",
-              "ブラジル":"134496","モロッコ":"136139","ハイチ":"140175","スコットランド":"136450",
-              "アメリカ":"134514","パラグアイ":"136471","オーストラリア":"134500","トルコ":"135985",
-              "ドイツ":"133907","キュラソー":"140271","コートジボワール":"134502","エクアドル":"134507",
-              "オランダ":"133905","日本":"134503","スウェーデン":"133916","チュニジア":"136142",
-              "ベルギー":"134515","エジプト":"136138","イラン":"134511","ニュージーランド":"137449",
-              "スペイン":"133909","カーボベルデ":"136477","サウジアラビア":"136137","ウルグアイ":"134504",
-              "フランス":"133913","セネガル":"136143","イラク":"140148","ノルウェー":"136516",
-              "アルゼンチン":"134509","アルジェリア":"134516","オーストリア":"135986","ヨルダン":"140145",
-              "ポルトガル":"133908","DRコンゴ":"136475","ウズベキスタン":"140151","コロンビア":"134501",
-              "イングランド":"133914","クロアチア":"133912","ガーナ":"134513","パナマ":"136141",
-            };
-            // TheSportsDB英名 → 日本語（表示用に相手国も日本語化を試みる）
-            const SDB_EN_JA = {};
-            Object.keys(NM).forEach((en) => { SDB_EN_JA[en] = NM[en]; });
-            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-            const friendlies = [];
-            const seen = new Set();
-            const seenMatch = new Set();
-            try {
-              const entries = Object.entries(SDB);
-              for (const [jaName, id] of entries) {
-                try {
-                  const r = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${id}`);
-                  const d = await r.json();
-                  const ev = (d.results || [])[0];
-                  if (ev) {
-                    const toJa = (n) => SDB_EN_JA[n] || n;
-                    const home = toJa(ev.strHomeTeam || ''), away = toJa(ev.strAwayTeam || '');
-                    const mkey = home + '|' + away + '|' + (ev.dateEvent || '');
-                    const involvesTarget = (home === jaName || away === jaName); // 対象国が出ている試合のみ（キャッシュ流用を弾く）
-                    if (involvesTarget && !seen.has(ev.idEvent) && !seenMatch.has(mkey)) {
-                      seen.add(ev.idEvent); seenMatch.add(mkey);
-                      friendlies.push({
-                        date: ev.dateEvent || '', home, away,
-                        hs: ev.intHomeScore == null ? null : Number(ev.intHomeScore),
-                        as: ev.intAwayScore == null ? null : Number(ev.intAwayScore),
-                        league: ev.strLeague || '',
-                      });
-                    }
+            // ノックアウト（round>=4 の終了試合の勝者を各ステージへ）ベストエフォート
+            const ko = {r32:[],r16:[],qf:[],sf:[],final:[],champ:null,third:null,matches};
+            const STG = {4:'r32',5:'r16',6:'qf',7:'sf',8:'final'};
+            matches.forEach(m => {
+              if (m.round<4 || m.hs==null || m.as==null) return;
+              const st = STG[m.round]; if (!st) return;
+              const w = m.hs>m.as ? m.home : m.as>m.hs ? m.away : null; if (!w) return;
+              if (st==='final') {
+                if (!ko.final.includes(m.home)) ko.final.push(m.home);
+                if (!ko.final.includes(m.away)) ko.final.push(m.away);
+                ko.champ = w;
+              } else if (!ko[st].includes(w)) ko[st].push(w);
+            });
+
+            const played = matches.some(m => m.round<=3 && m.hs!=null);
+            let phase = 'pre';
+            if (ko.champ) phase='done'; else if (ko.final.length) phase='final';
+            else if (ko.sf.length) phase='sf'; else if (ko.qf.length) phase='qf';
+            else if (ko.r16.length) phase='r16'; else if (ko.r32.length) phase='r32';
+            else if (played) phase='groups';
+
+            await patch({ phase, groups: played ? groups : {}, ko, last_api_update: new Date().toISOString() });
+            console.log('WC: matches', matches.length, '/ finished', matches.filter(m=>m.hs!=null).length, '/ phase', phase);
+
+            // ── 出場国の親善試合（eventslast, 重複対策込み）──
+            const fr = []; const seen = new Set(); const seenMatch = new Set();
+            for (const [jaName, id] of Object.entries(SDB)) {
+              try {
+                const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${id}`);
+                const d = await res.json();
+                const ev = (d.results || [])[0];
+                if (ev) {
+                  const home = ja(ev.strHomeTeam || ''), away = ja(ev.strAwayTeam || '');
+                  const mkey = home + '|' + away + '|' + (ev.dateEvent || '');
+                  if ((home===jaName || away===jaName) && !seen.has(ev.idEvent) && !seenMatch.has(mkey)) {
+                    seen.add(ev.idEvent); seenMatch.add(mkey);
+                    fr.push({ date: ev.dateEvent || '', home, away,
+                      hs: ev.intHomeScore==null ? null : Number(ev.intHomeScore),
+                      as: ev.intAwayScore==null ? null : Number(ev.intAwayScore),
+                      league: ev.strLeague || '' });
                   }
-                } catch (e) { /* skip team */ }
-                await sleep(2600); // レート制限対策（無料key ~30req/分を確実に下回る）
-              }
-              // 日付降順、最新24件
-              friendlies.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-              const recent = friendlies.slice(0, 24);
-              await patchSupabase('tournament', 'id', 'wc2026', { friendlies: recent });
-              console.log('✅ friendlies updated:', recent.length, 'matches');
-            } catch (e) {
-              console.warn('friendlies fail (column missing?):', e.message);
+                }
+              } catch (e) {}
+              await sleep(2600);
             }
+            fr.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+            try { await patch({ friendlies: fr.slice(0, 24) }); console.log('friendlies', fr.length); }
+            catch (e) { console.warn('friendlies patch fail:', e.message); }
           }
-
           main().catch((e) => { console.error('❌', e); process.exit(1); });
           SCRIPT
-
           node update.mjs
