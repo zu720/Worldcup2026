@@ -201,7 +201,7 @@ function generateRandom(mode){var gl2={};Object.keys(GRP).forEach(function(g){va
 // Main App
 // ═══════════════════════════════════════════════════════════
 export default function App() {
-  var [tab, setTab] = useState("vote");
+  var [tab, setTab] = useState("results");
   var [nm, setNm] = useState(myNameStore.get() || "");
   var [entered, setEntered] = useState(false);
   var [gl, setGl] = useState({});
@@ -246,6 +246,15 @@ export default function App() {
   var leftD = useMemo(function () { return deriveRounds(leftRes, ko); }, [leftRes, ko]);
   var rightD = useMemo(function () { return deriveRounds(rightRes, ko); }, [rightRes, ko]);
   var ctx = { ko: ko, des: des, adv: adv, gl: gl, tp: tp, pick3: pick3, setAg: setAg };
+  // 国名 → 直近試合（予想画面の国名横に「vs相手 1-0」表示用）
+  var fxByTeam = useMemo(function () {
+    var map = {};
+    ((tour && tour.friendlies) || []).forEach(function (m) {
+      if (m.home && map[m.home] === undefined) map[m.home] = { opp: m.away, gf: m.hs, ga: m.as, date: m.date, ha: "H" };
+      if (m.away && map[m.away] === undefined) map[m.away] = { opp: m.home, gf: m.as, ga: m.hs, date: m.date, ha: "A" };
+    });
+    return map;
+  }, [tour]);
 
   // ──────────────────────────────────────────────────────
   // Enter / Save / Load
@@ -359,14 +368,14 @@ export default function App() {
               rankTeam={rankTeam} setDes={setDes} applyRandom={applyRandom}
               allSorted={allSorted} gk={gk} glComplete={glComplete}
               leftRes={leftRes} rightRes={rightRes} leftD={leftD} rightD={rightD}
-              adv={adv} ctx={ctx} score={score} tour={tour} liveStarted={liveStarted}
+              adv={adv} ctx={ctx} score={score} tour={tour} liveStarted={liveStarted} fxByTeam={fxByTeam}
             />
           )}
           {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} />}
           {tab === "live" && <LiveTab tour={tour} liveStarted={liveStarted} />}
           {adminOpen && <AdminPanel tour={tour} setTour={setTour} close={function () { setAdminOpen(false); }} />}
         </main>
-        <SaveBar saveStatus={saveStatus} savedAt={savedAt} saveNow={saveNow} glComplete={glComplete} score={score} />
+        {tab === "vote" && <SaveBar saveStatus={saveStatus} savedAt={savedAt} saveNow={saveNow} glComplete={glComplete} score={score} />}
       </div>
     </div>
   );
@@ -453,7 +462,7 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin }) {
       </div>
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div className="h-tab-row" style={{ display: "flex" }}>
-        {[{ id: "vote", l: "🗳 予想する" }, { id: "results", l: "📊 ランキング" }, { id: "live", l: "⚽ 途中経過" }].map(function (t) {
+        {[{ id: "results", l: "📊 ランキング" }, { id: "live", l: "⚽ 途中経過" }].map(function (t) {
           var act = tab === t.id;
           return (
             <button
@@ -479,7 +488,21 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin }) {
 // ═══════════════════════════════════════════════════════════
 // Vote Tab
 // ═══════════════════════════════════════════════════════════
-function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, allSorted, gk, glComplete, leftRes, rightRes, leftD, rightD, adv, ctx, score }) {
+// 国名の直近試合を「vs 相手 1-0」の小タグで表示
+function FxTag({ fx }) {
+  if (!fx) return null;
+  var res = (fx.gf == null || fx.ga == null) ? "" : (fx.gf > fx.ga ? "○" : fx.gf < fx.ga ? "●" : "△");
+  var col = res === "○" ? $.pitchL : res === "●" ? $.redL : $.dim;
+  return (
+    <span title={"直近: vs " + fx.opp + " " + (fx.gf ?? "-") + "-" + (fx.ga ?? "-") + " (" + fx.date + ")"} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9, color: $.dim, marginLeft: 6, whiteSpace: "nowrap" }}>
+      {res && <span style={{ color: col, fontWeight: 700 }}>{res}</span>}
+      <span style={{ opacity: 0.85 }}>vs {fx.opp} {fx.gf ?? "-"}-{fx.ga ?? "-"}</span>
+    </span>
+  );
+}
+
+function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, allSorted, gk, glComplete, leftRes, rightRes, leftD, rightD, adv, ctx, score, fxByTeam }) {
+  fxByTeam = fxByTeam || {};
   var [showRules, setShowRules] = useState(false);
   return (
     <div className="fade-in">
@@ -603,7 +626,7 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
                       style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 14px", cursor: isO ? "default" : "pointer", background: isThis ? cfg.bg : "transparent", borderBottom: "1px solid rgba(255,255,255,.03)", opacity: isO ? 0.25 : 1, fontSize: 12 }}
                     >
                       <span style={{ fontWeight: isThis ? 700 : 400, color: isThis ? cfg.cl : $.txt, display: "flex", alignItems: "center", flex: 1, minWidth: 0 }}>
-                        <Fl n={t.n} s={14} />{t.n}
+                        <Fl n={t.n} s={14} />{t.n}<FxTag fx={fxByTeam[t.n]} />
                       </span>
                       <span style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
                         <span className="bonus-team-pt" style={{ fontSize: 14, color: $.gold, fontFamily: fontH, fontWeight: 700, minWidth: 50, textAlign: "right", letterSpacing: 1 }} title="基礎点（オッズ調整後）">x{b.toFixed(1)}</span>
@@ -691,7 +714,7 @@ function VoteTab({ gl, des, ko, tp, ag, setAg, rankTeam, setDes, applyRandom, al
                           <Fl n={t.n} s={20} />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: isR ? 700 : 400 }}>{t.n}</div>
-                            <div style={{ fontSize: 10, color: $.dim }}>x{bsc(t.o).toFixed(1)}</div>
+                            <div style={{ fontSize: 10, color: $.dim, display: "flex", alignItems: "center", gap: 2 }}>x{bsc(t.o).toFixed(1)}<FxTag fx={fxByTeam[t.n]} /></div>
                           </div>
                           {bk && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: DES[bk].bg, color: DES[bk].cl, fontWeight: 700 }}>{DES[bk].l}</span>}
                         </div>
@@ -866,7 +889,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
         </div>
       )}
 
-      {view === "stats" && rows.length > 0 && <VoteStats teamStats={teamStats} />}
+      {view === "stats" && rows.length > 0 && <VoteStats teamStats={teamStats} list={list} />}
 
       {view === "rank" && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {rows.map(function (r, i) {
@@ -967,7 +990,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
 // ═══════════════════════════════════════════════════════════
 // Vote Stats (人気チーム投票状況サマリ)
 // ═══════════════════════════════════════════════════════════
-function VoteStats({ teamStats }) {
+function VoteStats({ teamStats, list }) {
   var n = teamStats.n || 0;
   var stat = teamStats.stat;
   var pct = function (c) { return n > 0 ? Math.round((c / n) * 100) : 0; };
@@ -979,8 +1002,69 @@ function VoteStats({ teamStats }) {
     return Object.values(stat).filter(function (s) { return s.oshi > 0; }).sort(function (a, b) { return b.oshi - a.oshi; }).slice(0, 12);
   }, [stat]);
 
+  // 「人と違う予想」ベスト3（選んだチームの少数派度の平均）
+  var maverick = useMemo(function () {
+    if (!list || n < 2) return [];
+    var arr = (list || []).map(function (p) {
+      var picks = [];
+      Object.values(p.gl || {}).forEach(function (a) { (a || []).slice(0, 2).forEach(function (t) { if (t) picks.push(t); }); });
+      if (picks.length < 4) return null;
+      // 突破予想の少数派度（1 - そのチームを突破に選んだ割合）の平均
+      var rare = 0;
+      picks.forEach(function (t) { var s = stat[t]; var pop = s ? s.breakout / n : 0; rare += (1 - pop); });
+      var gScore = rare / picks.length;
+      // 推しの少数派度も加味
+      var oshi = ["A", "B", "C"].map(function (k) { return p.des && p.des[k]; }).filter(Boolean);
+      var score = gScore, oScore = 0;
+      if (oshi.length) {
+        oshi.forEach(function (t) { var s = stat[t]; var pop = s ? s.oshi / n : 0; oScore += (1 - pop); });
+        score = gScore * 0.6 + (oScore / oshi.length) * 0.4;
+      }
+      // 最も少数派なピックを1つ（説明用）
+      var rarest = null, rarestPop = 2;
+      picks.concat(oshi).forEach(function (t) {
+        var s = stat[t]; if (!s) return;
+        var pop = (s.breakout + s.oshi) / n;
+        if (pop < rarestPop) { rarestPop = pop; rarest = t; }
+      });
+      var rarestCount = rarest && stat[rarest] ? stat[rarest].breakout : 0;
+      return { name: p.name, score: score, des: p.des || {}, rarest: rarest, rarestCount: rarestCount };
+    }).filter(Boolean);
+    arr.sort(function (a, b) { return b.score - a.score; });
+    return arr.slice(0, 3);
+  }, [list, stat, n]);
+
+  var medal = ["🥇", "🥈", "🥉"];
   return (
     <div className="fade-in">
+      {/* 個性派ランキング（人と違う予想ベスト3） */}
+      {maverick.length > 0 && (
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 4 }}>🦄 人と違う予想 ベスト3</div>
+          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>みんなが選ばないチームを多く選んだ「逆張り度」ランキング。</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8 }}>
+            {maverick.map(function (m, i) {
+              return (
+                <div key={m.name} className="lift" style={{ borderRadius: 10, border: "1px solid " + (i === 0 ? $.purple + "70" : $.border), background: i === 0 ? "linear-gradient(135deg,rgba(168,85,247,.14),transparent 60%)" : $.card, padding: "10px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 18 }}>{medal[i]}</span>
+                    <span style={{ fontSize: 15, fontWeight: 700, flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</span>
+                    <span style={{ fontFamily: fontH, fontSize: 18, color: $.purpleL }}>{Math.round(m.score * 100)}</span>
+                    <span style={{ fontSize: 9, color: $.dim }}>逆張度</span>
+                  </div>
+                  {m.rarest && (
+                    <div style={{ fontSize: 10, color: $.txt2, display: "flex", alignItems: "center", gap: 3 }}>
+                      <span style={{ color: $.dim }}>注目:</span><Fl n={m.rarest} s={12} />{m.rarest}
+                      <span style={{ color: $.dim }}>を予想（他{Math.max(0, m.rarestCount - 1)}人）</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 突破予想ランキング */}
       <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 4 }}>🔥 突破予想が多いチーム</div>
       <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>各チームを1位or2位（＝突破）に予想した人数。バーは濃=1位票・淡=2位票の内訳。</div>
@@ -1461,7 +1545,7 @@ function LiveTab({ tour, liveStarted }) {
                         var qual = i < 2;
                         return (
                           <tr key={r.n + i} style={{ borderTop: "1px solid " + $.border, background: qual ? "rgba(34,197,94,.06)" : "transparent" }}>
-                            <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}><Fl n={r.n} s={12} />{r.n}</td>
+                            <td style={{ padding: "4px 8px", whiteSpace: "nowrap" }}><Fl n={r.n} s={12} />{r.n}{(function () { var t = ft(r.n); return t ? <span style={{ marginLeft: 5, fontSize: 9, color: $.goldD, fontWeight: 700 }} title="基礎点（オッズ調整値）">x{bsc(t.o).toFixed(1)}</span> : null; })()}</td>
                             <td style={{ padding: "4px 4px", textAlign: "center", color: $.dim }}>{r.mp || 0}</td>
                             <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.w || 0}</td>
                             <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.d || 0}</td>
