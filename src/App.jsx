@@ -222,7 +222,7 @@ function generateRandom(mode){var gl2={};Object.keys(GRP).forEach(function(g){va
 export default function App() {
   var [tab, setTab] = useState("results");
   var [nm, setNm] = useState(myNameStore.get() || "");
-  var [entered, setEntered] = useState(false);
+  var [entered, setEntered] = useState(true); // ゲート廃止: 開いたら即表示（名前は任意）
   var [gl, setGl] = useState({});
   var [des, setDesS] = useState({ A: null, B: null, C: null });
   var [tp, setTp] = useState({});
@@ -326,7 +326,7 @@ export default function App() {
   // Auto-enter if name already in localStorage
   useEffect(function () {
     var saved = myNameStore.get();
-    if (saved && !entered) {
+    if (saved) {
       setNm(saved);
       // wait one tick then auto-enter
       (async function () {
@@ -842,6 +842,8 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
         if (arr[1]) total2++;
         var stand = groupsForScore[g];
         if (!stand || stand.length === 0) return;
+        var grpPlayed = stand.some(function (t) { return (t.mp || 0) > 0; });
+        if (!grpPlayed) return; // 試合前グループは暫定順位を的中扱いしない
         if (arr[0] && stand[0] && stand[0].n === arr[0]) hits1++;
         if (arr[1] && stand[1] && stand[1].n === arr[1]) hits2++;
       });
@@ -938,21 +940,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
                   {isMe && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700, flexShrink: 0 }}>あなた</span>}
                   {r.vstyle && <span title="投票傾向" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, background: r.vstyle.bg, border: "1px solid " + r.vstyle.bd + "66", color: r.vstyle.cl, fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>{r.vstyle.emoji}{r.vstyle.l}</span>}
                 </div>
-                <div className="lb-bonuses leaderboard-row-bonuses" style={{ display: "flex", gap: 6, flex: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  {(["A", "B", "C"]).map(function (k) {
-                    var n = r.des && r.des[k];
-                    var cfg = DES[k];
-                    if (!n) {
-                      return <span key={k} className="bonus-chip" style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l}—</span>;
-                    }
-                    return (
-                      <span key={k} className="bonus-chip" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, padding: "3px 8px", borderRadius: 5, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700 }}>
-                        <span style={{ fontSize: 9, opacity: .8 }}>{cfg.l}</span>
-                        <Fl n={n} s={12} />{n}
-                      </span>
-                    );
-                  })}
-                </div>
+                <div style={{ flex: 1 }} />
                 <div className="lb-side" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, marginLeft: 6, fontSize: 12, lineHeight: 1.25, flexShrink: 0 }}>
                   <div className="lb-stats leaderboard-row-stats" style={{ display: "flex", gap: 8, fontWeight: 700 }}>
                     <span style={{ color: r.hits == null ? $.dim : r.hits > 0 ? $.pitchL : $.txt2 }}>突破{r.hits == null ? "—" : r.hits}/{r.total}</span>
