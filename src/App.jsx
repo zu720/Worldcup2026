@@ -144,6 +144,22 @@ function calcScore(gl, des, ko, groups) {
     return { total: Math.round(total * 100) / 100, bd: bd.sort(function (a, b) { return b.pts - a.pts; }) };
   } catch (e) { return { total: 0, bd: [] }; }
 }
+// 試合リスト（round<=3 の終了試合）からグループ星取表を計算
+function computeGroups(matches) {
+  var groups = {};
+  Object.keys(GRP).forEach(function (g) { groups[g] = GRP[g].map(function (t) { return { n: t.n, mp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 }; }); });
+  var find = function (g, n) { return groups[g].find(function (t) { return t.n === n; }); };
+  (matches || []).forEach(function (m) {
+    if ((m.round && m.round > 3) || m.hs == null || m.as == null) return;
+    var g = TEAM_GRP[m.home]; if (!g || TEAM_GRP[m.away] !== g) return;
+    var H = find(g, m.home), A = find(g, m.away); if (!H || !A) return;
+    H.mp++; A.mp++; H.gf += m.hs; H.ga += m.as; A.gf += m.as; A.ga += m.hs;
+    if (m.hs > m.as) { H.w++; A.l++; H.pts += 3; } else if (m.hs < m.as) { A.w++; H.l++; A.pts += 3; } else { H.d++; A.d++; H.pts++; A.pts++; }
+  });
+  Object.keys(groups).forEach(function (g) { groups[g].sort(function (a, b) { return b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf; }); });
+  return groups;
+}
+
 // 暫定ノックアウト: 実際の勝ち上がりが無ければ、試合消化済みグループの上位2を暫定R32とみなす
 function provisionalKo(tour) {
   var ko = (tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
@@ -1147,6 +1163,13 @@ function AdminPanel({ tour, setTour, close }) {
   var [ko, setKoL] = useState(JSON.parse(JSON.stringify((tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null })));
   var [msg, setMsg] = useState("");
   var [saving, setSaving] = useState(false);
+  // 試合結果 手動入力
+  var [mGroup, setMGroup] = useState("A");
+  var [mHome, setMHome] = useState("");
+  var [mAway, setMAway] = useState("");
+  var [mHs, setMHs] = useState("");
+  var [mAs, setMAs] = useState("");
+  var [mMsg, setMMsg] = useState("");
 
   function doUnlock() {
     if (pw === ADMIN_PW) { setUnlocked(true); setPwErr(""); }
@@ -1177,6 +1200,28 @@ function AdminPanel({ tour, setTour, close }) {
       setSaving(false);
     }
   }
+  async function saveMatch() {
+    if (!mHome || !mAway || mHome === mAway) { setMMsg("✕ 2チームを選択"); return; }
+    if (mHs === "" || mAs === "") { setMMsg("✕ スコアを入力"); return; }
+    setMMsg("保存中...");
+    try {
+      var matches = ((tour && tour.ko && tour.ko.matches) || []).slice();
+      var entry = { date: (new Date()).toISOString().slice(0, 10), home: mHome, away: mAway, hs: Number(mHs), as: Number(mAs), round: 1, status: "FT", manual: true };
+      var i = matches.findIndex(function (m) { return m.home === mHome && m.away === mAway; });
+      var i2 = matches.findIndex(function (m) { return m.home === mAway && m.away === mHome; }); // 逆順登録があれば置換
+      if (i >= 0) { entry.date = matches[i].date || entry.date; matches[i] = entry; }
+      else if (i2 >= 0) { matches[i2] = entry; }
+      else matches.push(entry);
+      var groups = computeGroups(matches);
+      var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
+      await saveTournament({ phase: "groups", groups: groups, ko: newKo });
+      setTour(function (t) { return Object.assign({}, t, { phase: "groups", groups: groups, ko: newKo }); });
+      setMMsg("✓ 登録: " + mHome + " " + mHs + "-" + mAs + " " + mAway);
+      setMHome(""); setMAway(""); setMHs(""); setMAs("");
+      setTimeout(function () { setMMsg(""); }, 2500);
+    } catch (e) { setMMsg("✕ " + (e.message || e)); }
+  }
+
   var STAGES = [
     { k: "r32", l: "ベスト32進出（16チーム想定）" },
     { k: "r16", l: "ベスト16進出（8チーム）" },
@@ -1234,6 +1279,30 @@ function AdminPanel({ tour, setTour, close }) {
                 <input type="checkbox" checked={voteLocked} onChange={function (e) { setVoteLocked(e.target.checked); }} />
                 投票ロック（全員編集不可）
               </label>
+            </div>
+
+            {/* 試合結果 手動入力 */}
+            <div style={{ marginBottom: 16, padding: 12, background: "rgba(52,211,153,.06)", borderRadius: 8, border: "1px solid " + $.pitchL + "40" }}>
+              <div style={{ fontSize: 12, color: $.pitchL, fontWeight: 700, marginBottom: 4 }}>🆕 試合結果を手動入力</div>
+              <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>APIが取りこぼした試合を直接登録（グループ星取表に即反映。自動更新でも消えません）。</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                <select value={mGroup} onChange={function (e) { setMGroup(e.target.value); setMHome(""); setMAway(""); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
+                  {Object.keys(GRP).map(function (g) { return <option key={g} value={g}>グループ{g}</option>; })}
+                </select>
+                <select value={mHome} onChange={function (e) { setMHome(e.target.value); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
+                  <option value="">ホーム</option>
+                  {GRP[mGroup].map(function (t) { return <option key={t.n} value={t.n}>{t.n}</option>; })}
+                </select>
+                <input type="number" value={mHs} onChange={function (e) { setMHs(e.target.value); }} placeholder="0" style={{ width: 44, padding: "6px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, textAlign: "center" }} />
+                <span style={{ color: $.dim }}>-</span>
+                <input type="number" value={mAs} onChange={function (e) { setMAs(e.target.value); }} placeholder="0" style={{ width: 44, padding: "6px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, textAlign: "center" }} />
+                <select value={mAway} onChange={function (e) { setMAway(e.target.value); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
+                  <option value="">アウェイ</option>
+                  {GRP[mGroup].map(function (t) { return <option key={t.n} value={t.n}>{t.n}</option>; })}
+                </select>
+                <button onClick={saveMatch} style={{ padding: "6px 16px", border: "none", borderRadius: 6, background: $.pitchL, color: "#000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>登録</button>
+              </div>
+              {mMsg && <div style={{ fontSize: 11, marginTop: 6, color: mMsg.startsWith("✓") ? $.pitchL : mMsg.startsWith("✕") ? $.redL : $.dim }}>{mMsg}</div>}
             </div>
 
             {/* KO stages */}
