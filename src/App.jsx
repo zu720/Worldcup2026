@@ -912,8 +912,8 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
 
       {view === "matrix" && rows.length > 0 && <MatrixTab myName={myName_} tour={tour} list={list} />}
 
-      {view === "rank" && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {rows.map(function (r, i) {
+      {view === "rank" && (function () {
+        var renderRow = function (r, i) {
           var isMe = r.name === myName_;
           var isOpen = open === r.name;
           return (
@@ -988,8 +988,14 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
               )}
             </div>
           );
-        })}
-      </div>}
+        };
+        return (
+          <div className="rank-cols" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{rows.slice(0, 17).map(function (r, idx) { return renderRow(r, idx); })}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{rows.slice(17).map(function (r, idx) { return renderRow(r, idx + 17); })}</div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2015,6 +2021,7 @@ function Styles() {
         .lb-score-block > div:first-child { font-size: 18px !important; }
         .lb-arrow { font-size: 11px !important; }
         .lb-expand-bonuses { display: flex !important; }
+        .rank-cols { grid-template-columns: 1fr !important; }
         /* 投票一覧マトリクスをスマホでコンパクトに */
         .mx-name, .mx-cell { min-width: 50px !important; max-width: 50px !important; font-size: 8px !important; padding: 3px 2px !important; overflow: hidden !important; }
         .mx-cell span { gap: 1px !important; }
