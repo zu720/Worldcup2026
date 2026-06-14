@@ -19,111 +19,82 @@ jobs:
         run: |
           cat << 'SCRIPT' > update.mjs
           /**
-           * FIFA W杯2026 結果＋出場国の親善試合を TheSportsDB(無料・公開API) から取得し、
-           * Supabase の tournament に書き込む。APIキー不要（公開キー "3"）。
+           * FIFA W杯2026 結果＋親善試合を TheSportsDB(無料・公開API) から取得し Supabase へ。
+           * 無料tierは一度に少数の試合しか返さないため、複数エンドポイントを統合し、
+           * 既存の試合結果を「累積」して一度取得した結果は失わない設計。
            * 必要 Secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY(service_role)
            */
           const URL = process.env.SUPABASE_URL;
           const KEY = process.env.SUPABASE_SERVICE_KEY;
-          const LEAGUE = 4429, SEASON = 2026;
+          const L = 4429, S = 2026;
           const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          const J = async (u, o) => { try { const r = await fetch(u, o); return await r.json(); } catch (e) { return {}; } };
 
-          const NM = {'Mexico':'メキシコ','South Africa':'南アフリカ','South Korea':'韓国','Korea Republic':'韓国','Czech Republic':'チェコ','Czechia':'チェコ','Canada':'カナダ','Bosnia and Herzegovina':'ボスニア','Bosnia-Herzegovina':'ボスニア','Qatar':'カタール','Switzerland':'スイス','Brazil':'ブラジル','Morocco':'モロッコ','Haiti':'ハイチ','Scotland':'スコットランド','United States':'アメリカ','USA':'アメリカ','Paraguay':'パラグアイ','Australia':'オーストラリア','Turkey':'トルコ','Turkiye':'トルコ','Germany':'ドイツ','Curacao':'キュラソー','Ivory Coast':'コートジボワール','Ecuador':'エクアドル','Netherlands':'オランダ','Japan':'日本','Sweden':'スウェーデン','Tunisia':'チュニジア','Belgium':'ベルギー','Egypt':'エジプト','Iran':'イラン','New Zealand':'ニュージーランド','Spain':'スペイン','Cape Verde':'カーボベルデ','Saudi Arabia':'サウジアラビア','Uruguay':'ウルグアイ','France':'フランス','Senegal':'セネガル','Iraq':'イラク','Norway':'ノルウェー','Argentina':'アルゼンチン','Algeria':'アルジェリア','Austria':'オーストリア','Jordan':'ヨルダン','Portugal':'ポルトガル','DR Congo':'DRコンゴ','Congo DR':'DRコンゴ','Uzbekistan':'ウズベキスタン','Colombia':'コロンビア','England':'イングランド','Croatia':'クロアチア','Ghana':'ガーナ','Panama':'パナマ'};
+          const NM = {'Mexico':'メキシコ','South Africa':'南アフリカ','South Korea':'韓国','Korea Republic':'韓国','Czech Republic':'チェコ','Czechia':'チェコ','Canada':'カナダ','Bosnia and Herzegovina':'ボスニア','Bosnia-Herzegovina':'ボスニア','Qatar':'カタール','Switzerland':'スイス','Brazil':'ブラジル','Morocco':'モロッコ','Haiti':'ハイチ','Scotland':'スコットランド','United States':'アメリカ','USA':'アメリカ','Paraguay':'パラグアイ','Australia':'オーストラリア','Turkey':'トルコ','Turkiye':'トルコ','Germany':'ドイツ','Curacao':'キュラソー','Curaçao':'キュラソー','Ivory Coast':'コートジボワール','Ecuador':'エクアドル','Netherlands':'オランダ','Japan':'日本','Sweden':'スウェーデン','Tunisia':'チュニジア','Belgium':'ベルギー','Egypt':'エジプト','Iran':'イラン','New Zealand':'ニュージーランド','Spain':'スペイン','Cape Verde':'カーボベルデ','Saudi Arabia':'サウジアラビア','Uruguay':'ウルグアイ','France':'フランス','Senegal':'セネガル','Iraq':'イラク','Norway':'ノルウェー','Argentina':'アルゼンチン','Algeria':'アルジェリア','Austria':'オーストリア','Jordan':'ヨルダン','Portugal':'ポルトガル','DR Congo':'DRコンゴ','Congo DR':'DRコンゴ','Uzbekistan':'ウズベキスタン','Colombia':'コロンビア','England':'イングランド','Croatia':'クロアチア','Ghana':'ガーナ','Panama':'パナマ'};
           const ja = (n) => NM[n] || n;
           const GRP = {A:["メキシコ","南アフリカ","韓国","チェコ"],B:["カナダ","ボスニア","カタール","スイス"],C:["ブラジル","モロッコ","ハイチ","スコットランド"],D:["アメリカ","パラグアイ","オーストラリア","トルコ"],E:["ドイツ","キュラソー","コートジボワール","エクアドル"],F:["オランダ","日本","スウェーデン","チュニジア"],G:["ベルギー","エジプト","イラン","ニュージーランド"],H:["スペイン","カーボベルデ","サウジアラビア","ウルグアイ"],I:["フランス","セネガル","イラク","ノルウェー"],J:["アルゼンチン","アルジェリア","オーストリア","ヨルダン"],K:["ポルトガル","DRコンゴ","ウズベキスタン","コロンビア"],L:["イングランド","クロアチア","ガーナ","パナマ"]};
-          const TEAM_GRP = {}; Object.entries(GRP).forEach(([g,ts]) => ts.forEach(t => TEAM_GRP[t]=g));
+          const TG = {}; Object.entries(GRP).forEach(([g,ts]) => ts.forEach(t => TG[t]=g));
           const SDB = {"メキシコ":"134497","南アフリカ":"136482","韓国":"134517","チェコ":"133904","カナダ":"140073","ボスニア":"149845","カタール":"136472","スイス":"134506","ブラジル":"134496","モロッコ":"136139","ハイチ":"140175","スコットランド":"136450","アメリカ":"134514","パラグアイ":"136471","オーストラリア":"134500","トルコ":"135985","ドイツ":"133907","キュラソー":"140271","コートジボワール":"134502","エクアドル":"134507","オランダ":"133905","日本":"134503","スウェーデン":"133916","チュニジア":"136142","ベルギー":"134515","エジプト":"136138","イラン":"134511","ニュージーランド":"137449","スペイン":"133909","カーボベルデ":"136477","サウジアラビア":"136137","ウルグアイ":"134504","フランス":"133913","セネガル":"136143","イラク":"140148","ノルウェー":"136516","アルゼンチン":"134509","アルジェリア":"134516","オーストリア":"135986","ヨルダン":"140145","ポルトガル":"133908","DRコンゴ":"136475","ウズベキスタン":"140151","コロンビア":"134501","イングランド":"133914","クロアチア":"133912","ガーナ":"134513","パナマ":"136141"};
 
           async function patch(data) {
-            const res = await fetch(`${URL}/rest/v1/tournament?id=eq.wc2026`, {
-              method: 'PATCH',
-              headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-              body: JSON.stringify(data),
-            });
+            const res = await fetch(`${URL}/rest/v1/tournament?id=eq.wc2026`, { method:'PATCH', headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json',Prefer:'return=minimal'}, body: JSON.stringify(data) });
             if (!res.ok) throw new Error('Supabase ' + res.status + ': ' + (await res.text()).slice(0,200));
           }
 
           async function main() {
             if (!URL || !KEY) { console.log('Secrets未設定, skip'); return; }
 
-            // ── 本戦（WC2026, TheSportsDB id=4429）──
-            let all = [];
-            for (let r = 1; r <= 8; r++) {
-              try {
-                const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsround.php?id=${LEAGUE}&r=${r}&s=${SEASON}`);
-                const d = await res.json();
-                (d.events || []).forEach(e => all.push(e));
-              } catch (e) {}
-              await sleep(1500);
-            }
-            const matches = all.map(e => ({
-              date: e.dateEvent || '', home: ja(e.strHomeTeam || ''), away: ja(e.strAwayTeam || ''),
-              hs: (e.intHomeScore == null || e.intHomeScore === '') ? null : Number(e.intHomeScore),
-              as: (e.intAwayScore == null || e.intAwayScore === '') ? null : Number(e.intAwayScore),
-              round: Number(e.intRound || 0), status: e.strStatus || '',
-            })).sort((a,b) => (a.date||'').localeCompare(b.date||''));
+            // 既存の試合（累積のベース）
+            let prev = [];
+            try { const d = await J(`${URL}/rest/v1/tournament?id=eq.wc2026&select=ko`, {headers:{apikey:KEY,Authorization:'Bearer '+KEY}}); prev = (d[0] && d[0].ko && d[0].ko.matches) || []; } catch (e) {}
 
-            // グループ星取表（round<=3 の終了試合から計算）
-            const groups = {};
-            Object.keys(GRP).forEach(g => { groups[g] = GRP[g].map(n => ({n,mp:0,w:0,d:0,l:0,gf:0,ga:0,pts:0})); });
+            // 複数エンドポイントから収集（無料tierの断片化対策）
+            const eps = [`/eventsseason.php?id=${L}&s=${S}`, `/eventspastleague.php?id=${L}`, `/eventsnextleague.php?id=${L}`];
+            for (let r = 1; r <= 8; r++) eps.push(`/eventsround.php?id=${L}&r=${r}&s=${S}`);
+            let raw = [];
+            for (const ep of eps) { const d = await J('https://www.thesportsdb.com/api/v1/json/3' + ep); (d.events || []).forEach(e => raw.push(e)); await sleep(1000); }
+
+            // マージ（key=home|away、スコア有を優先、既存prevを保持して結果を失わない）
+            const map = {};
+            const put = (m) => { const k = m.home+'|'+m.away; const ex = map[k]; const has = m.hs!=null&&m.as!=null; if (!ex) map[k]=m; else { const eh = ex.hs!=null&&ex.as!=null; if (has&&!eh) map[k]=m; } };
+            prev.forEach(put);
+            raw.forEach(e => { const m = {date:e.dateEvent||'',home:ja(e.strHomeTeam||''),away:ja(e.strAwayTeam||''),hs:(e.intHomeScore==null||e.intHomeScore==='')?null:Number(e.intHomeScore),as:(e.intAwayScore==null||e.intAwayScore==='')?null:Number(e.intAwayScore),round:Number(e.intRound||0),status:e.strStatus||''}; if (m.home&&m.away) put(m); });
+            const matches = Object.values(map).sort((a,b) => (a.date||'').localeCompare(b.date||''));
+
+            // 星取表（round<=3 の終了試合）
+            const groups = {}; Object.keys(GRP).forEach(g => groups[g] = GRP[g].map(n => ({n,mp:0,w:0,d:0,l:0,gf:0,ga:0,pts:0})));
             const find = (g,n) => groups[g].find(t => t.n===n);
-            matches.forEach(m => {
-              if (m.round>3 || m.hs==null || m.as==null) return;
-              const g = TEAM_GRP[m.home]; if (!g || TEAM_GRP[m.away]!==g) return;
-              const H=find(g,m.home), A=find(g,m.away); if (!H||!A) return;
-              H.mp++;A.mp++; H.gf+=m.hs;H.ga+=m.as; A.gf+=m.as;A.ga+=m.hs;
-              if (m.hs>m.as){H.w++;A.l++;H.pts+=3;} else if (m.hs<m.as){A.w++;H.l++;A.pts+=3;} else {H.d++;A.d++;H.pts++;A.pts++;}
-            });
+            matches.forEach(m => { if ((m.round&&m.round>3)||m.hs==null||m.as==null) return; const g=TG[m.home]; if (!g||TG[m.away]!==g) return; const H=find(g,m.home),A=find(g,m.away); if (!H||!A) return; H.mp++;A.mp++;H.gf+=m.hs;H.ga+=m.as;A.gf+=m.as;A.ga+=m.hs; if (m.hs>m.as){H.w++;A.l++;H.pts+=3;} else if (m.hs<m.as){A.w++;H.l++;A.pts+=3;} else {H.d++;A.d++;H.pts++;A.pts++;} });
             Object.keys(groups).forEach(g => groups[g].sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf));
+            const played = matches.some(m => (!m.round||m.round<=3) && m.hs!=null);
 
-            // ノックアウト（round>=4 の終了試合の勝者を各ステージへ）ベストエフォート
+            // ノックアウト（round>=4 の終了試合の勝者）ベストエフォート
             const ko = {r32:[],r16:[],qf:[],sf:[],final:[],champ:null,third:null,matches};
             const STG = {4:'r32',5:'r16',6:'qf',7:'sf',8:'final'};
-            matches.forEach(m => {
-              if (m.round<4 || m.hs==null || m.as==null) return;
-              const st = STG[m.round]; if (!st) return;
-              const w = m.hs>m.as ? m.home : m.as>m.hs ? m.away : null; if (!w) return;
-              if (st==='final') {
-                if (!ko.final.includes(m.home)) ko.final.push(m.home);
-                if (!ko.final.includes(m.away)) ko.final.push(m.away);
-                ko.champ = w;
-              } else if (!ko[st].includes(w)) ko[st].push(w);
-            });
-
-            const played = matches.some(m => m.round<=3 && m.hs!=null);
+            matches.forEach(m => { if (!m.round||m.round<4||m.hs==null||m.as==null) return; const st=STG[m.round]; if (!st) return; const w=m.hs>m.as?m.home:m.as>m.hs?m.away:null; if (!w) return; if (st==='final'){ if(!ko.final.includes(m.home))ko.final.push(m.home); if(!ko.final.includes(m.away))ko.final.push(m.away); ko.champ=w; } else if (!ko[st].includes(w)) ko[st].push(w); });
             let phase = 'pre';
-            if (ko.champ) phase='done'; else if (ko.final.length) phase='final';
-            else if (ko.sf.length) phase='sf'; else if (ko.qf.length) phase='qf';
-            else if (ko.r16.length) phase='r16'; else if (ko.r32.length) phase='r32';
-            else if (played) phase='groups';
+            if (ko.champ) phase='done'; else if (ko.final.length) phase='final'; else if (ko.sf.length) phase='sf'; else if (ko.qf.length) phase='qf'; else if (ko.r16.length) phase='r16'; else if (ko.r32.length) phase='r32'; else if (played) phase='groups';
 
             await patch({ phase, groups: played ? groups : {}, ko, last_api_update: new Date().toISOString() });
-            console.log('WC: matches', matches.length, '/ finished', matches.filter(m=>m.hs!=null).length, '/ phase', phase);
+            console.log('WC: prev', prev.length, 'merged', matches.length, 'finished', matches.filter(m=>m.hs!=null).length, 'phase', phase);
 
-            // ── 出場国の親善試合（eventslast, 重複対策込み）──
-            const fr = []; const seen = new Set(); const seenMatch = new Set();
+            // 親善試合（出場国の直近1試合、重複対策込み）
+            const fr = []; const seen = new Set(); const seenM = new Set();
             for (const [jaName, id] of Object.entries(SDB)) {
-              try {
-                const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${id}`);
-                const d = await res.json();
-                const ev = (d.results || [])[0];
-                if (ev) {
-                  const home = ja(ev.strHomeTeam || ''), away = ja(ev.strAwayTeam || '');
-                  const mkey = home + '|' + away + '|' + (ev.dateEvent || '');
-                  if ((home===jaName || away===jaName) && !seen.has(ev.idEvent) && !seenMatch.has(mkey)) {
-                    seen.add(ev.idEvent); seenMatch.add(mkey);
-                    fr.push({ date: ev.dateEvent || '', home, away,
-                      hs: ev.intHomeScore==null ? null : Number(ev.intHomeScore),
-                      as: ev.intAwayScore==null ? null : Number(ev.intAwayScore),
-                      league: ev.strLeague || '' });
-                  }
+              const d = await J(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${id}`);
+              const ev = (d.results || [])[0];
+              if (ev) {
+                const home = ja(ev.strHomeTeam||''), away = ja(ev.strAwayTeam||'');
+                const mk = home+'|'+away+'|'+(ev.dateEvent||'');
+                if ((home===jaName||away===jaName) && !seen.has(ev.idEvent) && !seenM.has(mk)) {
+                  seen.add(ev.idEvent); seenM.add(mk);
+                  fr.push({ date:ev.dateEvent||'', home, away, hs:ev.intHomeScore==null?null:Number(ev.intHomeScore), as:ev.intAwayScore==null?null:Number(ev.intAwayScore), league:ev.strLeague||'' });
                 }
-              } catch (e) {}
+              }
               await sleep(2600);
             }
             fr.sort((a,b) => (b.date||'').localeCompare(a.date||''));
-            try { await patch({ friendlies: fr.slice(0, 24) }); console.log('friendlies', fr.length); }
-            catch (e) { console.warn('friendlies patch fail:', e.message); }
+            try { await patch({ friendlies: fr.slice(0,24) }); console.log('friendlies', fr.length); } catch (e) { console.warn('friendlies fail:', e.message); }
           }
           main().catch((e) => { console.error('❌', e); process.exit(1); });
           SCRIPT
