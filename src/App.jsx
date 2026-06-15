@@ -72,6 +72,8 @@ var GRP = {
 var AT = Object.values(GRP).flat();
 var ft = function(n){ return AT.find(function(t){ return t.n===n; }) || null; };
 var TEAM_GRP = {}; Object.keys(GRP).forEach(function(g){ GRP[g].forEach(function(t){ TEAM_GRP[t.n] = g; }); });
+// FIFA男子世界ランキング（2026年4月1日付 / J SPORTS）。ノルウェーは概算。
+var FIFA_RANK = {"フランス":1,"スペイン":2,"アルゼンチン":3,"イングランド":4,"ポルトガル":5,"ブラジル":6,"オランダ":7,"モロッコ":8,"ベルギー":9,"ドイツ":10,"クロアチア":11,"コロンビア":13,"セネガル":14,"メキシコ":15,"アメリカ":16,"ウルグアイ":17,"日本":18,"スイス":19,"イラン":21,"トルコ":22,"エクアドル":23,"オーストリア":24,"韓国":25,"オーストラリア":27,"アルジェリア":28,"エジプト":29,"カナダ":30,"ノルウェー":32,"パナマ":33,"コートジボワール":34,"スウェーデン":38,"パラグアイ":40,"チェコ":41,"スコットランド":43,"チュニジア":44,"DRコンゴ":46,"ウズベキスタン":50,"カタール":55,"イラク":57,"南アフリカ":60,"サウジアラビア":61,"ヨルダン":63,"ボスニア":65,"カーボベルデ":69,"ガーナ":74,"キュラソー":82,"ハイチ":83,"ニュージーランド":85};
 var bsc = function(o){ return Math.round(Math.pow(o,.4)*10)/10; };
 
 // ステージ倍率（累積加算）
@@ -236,11 +238,11 @@ function thirdPlaceRanking(groups) {
     var arr = groups && groups[g];
     if (arr && arr.length >= 3) {
       var t = arr[2], team = ft(t.n);
-      thirds.push({ n: t.n, grp: g, mp: t.mp || 0, pts: t.pts || 0, gd: (t.gf || 0) - (t.ga || 0), gf: t.gf || 0, yc: t.yc || 0, rc: t.rc || 0, fp: (t.fp != null ? t.fp : -((t.yc || 0) + (t.rc || 0) * 4)), o: team ? team.o : 1000 });
+      thirds.push({ n: t.n, grp: g, mp: t.mp || 0, pts: t.pts || 0, gd: (t.gf || 0) - (t.ga || 0), gf: t.gf || 0, yc: t.yc || 0, rc: t.rc || 0, fp: (t.fp != null ? t.fp : -((t.yc || 0) + (t.rc || 0) * 4)), fifa: FIFA_RANK[t.n] || 999, o: team ? team.o : 1000 });
     }
   });
-  // 勝点→得失点差→総得点→フェアプレー(高い順)→FIFAランク代用(オッズ昇順)
-  thirds.sort(function (a, b) { return b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || b.fp - a.fp || a.o - b.o; });
+  // 勝点→得失点差→総得点→フェアプレー(高い順)→FIFAランク(昇順)
+  thirds.sort(function (a, b) { return b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || b.fp - a.fp || a.fifa - b.fifa; });
   thirds.forEach(function (t, i) { t.rank = i + 1; t.top8 = i < 8; });
   return thirds;
 }
@@ -1757,6 +1759,7 @@ function LiveTab({ tour, liveStarted }) {
                   <th style={{ padding: "4px 6px" }}>得失</th>
                   <th style={{ padding: "4px 6px" }}>得点</th>
                   <th style={{ padding: "4px 6px" }} title="フェアプレー（黄-1/赤-4）">FP</th>
+                  <th style={{ padding: "4px 6px" }} title="FIFA世界ランキング(2026/4)">FIFA</th>
                 </tr>
               </thead>
               <tbody>
@@ -1771,13 +1774,14 @@ function LiveTab({ tour, liveStarted }) {
                       <td style={{ padding: "5px 6px", textAlign: "center", color: t.gd > 0 ? $.pitchL : t.gd < 0 ? $.redL : $.dim }}>{t.gd > 0 ? "+" : ""}{t.gd}</td>
                       <td style={{ padding: "5px 6px", textAlign: "center" }}>{t.gf}</td>
                       <td style={{ padding: "5px 6px", textAlign: "center", color: $.dim }} title={"黄" + (t.yc || 0) + " 赤" + (t.rc || 0)}>{t.fp || 0}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.txt2 }}>{t.fifa && t.fifa < 999 ? t.fifa + "位" : "—"}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>緑＝暫定進出（上位8）。順位＝勝点→得失点差→総得点→フェアプレー(FP: 黄-1/赤-4)→FIFAランク(オッズ)。</div>
+          <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>緑＝暫定進出（上位8）。順位＝勝点→得失点差→総得点→フェアプレー(FP: 黄-1/赤-4)→FIFAランク(2026/4)。</div>
         </div>
       )}
 
