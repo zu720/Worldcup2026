@@ -236,10 +236,11 @@ function thirdPlaceRanking(groups) {
     var arr = groups && groups[g];
     if (arr && arr.length >= 3) {
       var t = arr[2], team = ft(t.n);
-      thirds.push({ n: t.n, grp: g, mp: t.mp || 0, pts: t.pts || 0, gd: (t.gf || 0) - (t.ga || 0), gf: t.gf || 0, o: team ? team.o : 1000 });
+      thirds.push({ n: t.n, grp: g, mp: t.mp || 0, pts: t.pts || 0, gd: (t.gf || 0) - (t.ga || 0), gf: t.gf || 0, yc: t.yc || 0, rc: t.rc || 0, fp: (t.fp != null ? t.fp : -((t.yc || 0) + (t.rc || 0) * 4)), o: team ? team.o : 1000 });
     }
   });
-  thirds.sort(function (a, b) { return b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.o - b.o; });
+  // 勝点→得失点差→総得点→フェアプレー(高い順)→FIFAランク代用(オッズ昇順)
+  thirds.sort(function (a, b) { return b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || b.fp - a.fp || a.o - b.o; });
   thirds.forEach(function (t, i) { t.rank = i + 1; t.top8 = i < 8; });
   return thirds;
 }
@@ -1698,6 +1699,18 @@ function MatrixTab({ myName: myName_, tour, list }) {
   );
 }
 
+// UTCタイムスタンプ → 日本時間の {date:"6/18", time:"07:00"}
+function jstParts(ts) {
+  if (!ts) return null;
+  try {
+    var d = new Date(ts.length <= 19 ? ts + "Z" : ts);
+    if (isNaN(d.getTime())) return null;
+    var date = d.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric" });
+    var time = d.toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" });
+    return { date: date, time: time };
+  } catch (e) { return null; }
+}
+
 function LiveTab({ tour, liveStarted }) {
   var phase = (tour && tour.phase) || "pre";
   var groups = (tour && tour.groups) || {};
@@ -1726,6 +1739,47 @@ function LiveTab({ tour, liveStarted }) {
   return (
     <div className="fade-in">
       <Sec icon="📡" title="大会途中経過" sub={"現在のフェーズ: " + (PHASE_LABEL[phase] || phase) + (lastUpd ? "　/　最終更新: " + new Date(lastUpd).toLocaleString("ja-JP") : "")} />
+
+      {/* 3位チームランキング（上位8が進出） */}
+      {hasAnyGroup && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 2 }}>🥉 各組3位ランキング</div>
+          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>上位8チームが決勝トーナメント進出。順位＝勝点→得失点差→総得点→（フェアプレー）→FIFAランク。</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 380 }}>
+              <thead>
+                <tr style={{ color: $.dim, fontSize: 10 }}>
+                  <th style={{ padding: "4px 8px", textAlign: "left" }}>順</th>
+                  <th style={{ padding: "4px 6px" }}>組</th>
+                  <th style={{ padding: "4px 8px", textAlign: "left" }}>チーム</th>
+                  <th style={{ padding: "4px 6px" }}>試</th>
+                  <th style={{ padding: "4px 6px", color: $.gold }}>勝点</th>
+                  <th style={{ padding: "4px 6px" }}>得失</th>
+                  <th style={{ padding: "4px 6px" }}>得点</th>
+                  <th style={{ padding: "4px 6px" }} title="フェアプレー（黄-1/赤-4）">FP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {thirdRanking.map(function (t) {
+                  return (
+                    <tr key={t.grp} style={{ borderTop: "1px solid " + $.border, background: t.top8 ? "rgba(34,197,94,.12)" : "transparent" }}>
+                      <td style={{ padding: "5px 8px", fontFamily: fontH, fontSize: 14, color: t.top8 ? $.pitchL : $.dim }}>{t.rank}{t.top8 ? " ✓" : ""}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.grp}</td>
+                      <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}><Fl n={t.n} s={13} />{t.n}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.dim }}>{t.mp}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.pts}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: t.gd > 0 ? $.pitchL : t.gd < 0 ? $.redL : $.dim }}>{t.gd > 0 ? "+" : ""}{t.gd}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center" }}>{t.gf}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.dim }} title={"黄" + (t.yc || 0) + " 赤" + (t.rc || 0)}>{t.fp || 0}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>緑＝暫定進出（上位8）。順位＝勝点→得失点差→総得点→フェアプレー(FP: 黄-1/赤-4)→FIFAランク(オッズ)。</div>
+        </div>
+      )}
 
       {(
         <div style={{ marginBottom: 24 }}>
@@ -1775,15 +1829,16 @@ function LiveTab({ tour, liveStarted }) {
                   </table>
                   {gms.length > 0 && (
                     <div style={{ borderTop: "1px solid " + $.border, padding: "6px 10px", background: "rgba(0,0,0,.15)" }}>
-                      <div style={{ fontSize: 9, color: $.dim, marginBottom: 3 }}>試合結果・日程</div>
+                      <div style={{ fontSize: 9, color: $.dim, marginBottom: 3 }}>試合結果・日程 <span style={{ opacity: .7 }}>（時刻は日本時間）</span></div>
                       {gms.map(function (m, mi) {
                         var done = m.hs != null && m.as != null;
                         var hw = done && m.hs > m.as, aw = done && m.as > m.hs;
+                        var jp = !done ? jstParts(m.ts) : null;
                         return (
                           <div key={mi} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, padding: "2px 0", color: $.txt2 }}>
-                            <span style={{ width: 34, color: $.dim, flexShrink: 0, fontSize: 9 }}>{(m.date || "").slice(5)}</span>
+                            <span style={{ width: 34, color: $.dim, flexShrink: 0, fontSize: 9 }}>{jp ? jp.date : (m.date || "").slice(5)}</span>
                             <span style={{ flex: 1, textAlign: "right", fontWeight: hw ? 700 : 400, color: hw ? $.txt : $.txt2, whiteSpace: "nowrap", overflow: "hidden" }}>{m.home}</span>
-                            <span style={{ fontFamily: fontH, color: done ? $.gold : $.dim, minWidth: 28, textAlign: "center" }}>{done ? m.hs + "-" + m.as : "vs"}</span>
+                            <span style={{ fontFamily: fontH, color: done ? $.gold : $.dim, minWidth: 34, textAlign: "center", fontSize: done ? 11 : 9 }}>{done ? m.hs + "-" + m.as : (jp ? jp.time : "vs")}</span>
                             <span style={{ flex: 1, textAlign: "left", fontWeight: aw ? 700 : 400, color: aw ? $.txt : $.txt2, whiteSpace: "nowrap", overflow: "hidden" }}>{m.away}</span>
                           </div>
                         );
@@ -1798,124 +1853,8 @@ function LiveTab({ tour, liveStarted }) {
       )}
 
 
-      {/* 本戦 速報 */}
-      {wcMatches.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 4 }}>⚡ 本戦 速報</div>
-          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>FIFA W杯2026 本戦の試合結果・日程（毎日自動更新）。</div>
-          {wcFinished.length > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: $.pitchL, fontWeight: 700, marginBottom: 6 }}>● 結果（{wcFinished.length}試合）</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 8 }}>
-                {wcFinished.slice(0, 24).map(function (m, i) {
-                  var hw = m.hs > m.as, aw = m.as > m.hs;
-                  return (
-                    <div key={i} className="lift" style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, padding: "8px 12px" }}>
-                      <div style={{ fontSize: 9, color: $.dim, marginBottom: 3 }}>{m.date}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                        <span style={{ flex: 1, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontWeight: hw ? 700 : 400, color: hw ? $.txt : $.txt2 }}>{m.home}<Fl n={m.home} s={14} /></span>
-                        <span style={{ fontFamily: fontH, fontSize: 17, color: $.gold, padding: "0 4px", whiteSpace: "nowrap" }}>{m.hs}<span style={{ color: $.dim }}>-</span>{m.as}</span>
-                        <span style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 4, fontWeight: aw ? 700 : 400, color: aw ? $.txt : $.txt2 }}><Fl n={m.away} s={14} />{m.away}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {wcUpcoming.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, color: $.dim, fontWeight: 700, marginBottom: 6 }}>○ これから（直近{Math.min(wcUpcoming.length, 12)}試合）</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 8 }}>
-                {wcUpcoming.slice(0, 12).map(function (m, i) {
-                  return (
-                    <div key={i} style={{ borderRadius: 10, border: "1px dashed " + $.border, background: "rgba(255,255,255,.02)", padding: "8px 12px", opacity: 0.85 }}>
-                      <div style={{ fontSize: 9, color: $.dim, marginBottom: 3 }}>{m.date}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                        <span style={{ flex: 1, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, color: $.txt2 }}>{m.home}<Fl n={m.home} s={13} /></span>
-                        <span style={{ fontSize: 10, color: $.dim }}>vs</span>
-                        <span style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 4, color: $.txt2 }}><Fl n={m.away} s={13} />{m.away}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* 直近の代表戦（親善試合など） */}
-      {friendlies.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 4 }}>🌍 出場国の直近試合</div>
-          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>開幕前の親善試合・予選など、各代表チームの最新結果（毎日自動更新）。</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 8 }}>
-            {friendlies.map(function (m, i) {
-              var isWC = AT.some(function (t) { return t.n === m.home; });
-              var isWCa = AT.some(function (t) { return t.n === m.away; });
-              return (
-                <div key={i} className="lift" style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, padding: "9px 12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                    <span style={{ fontSize: 9, color: $.dim, letterSpacing: 0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{m.league || "親善試合"}</span>
-                    <span style={{ fontSize: 9, color: $.dim, flexShrink: 0 }}>{m.date}</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                    <span style={{ flex: 1, textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, fontWeight: isWC ? 700 : 400, color: isWC ? $.txt : $.txt2 }}>
-                      {m.home}{isWC && <Fl n={m.home} s={14} />}
-                    </span>
-                    <span style={{ fontFamily: fontH, fontSize: 17, color: $.gold, padding: "0 6px", whiteSpace: "nowrap" }}>
-                      {m.hs == null ? "-" : m.hs}<span style={{ color: $.dim, margin: "0 2px" }}>:</span>{m.as == null ? "-" : m.as}
-                    </span>
-                    <span style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 4, fontWeight: isWCa ? 700 : 400, color: isWCa ? $.txt : $.txt2 }}>
-                      {isWCa && <Fl n={m.away} s={14} />}{m.away}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
-      {/* 3位チームランキング（上位8が進出） */}
-      {hasAnyGroup && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 2 }}>🥉 各組3位ランキング</div>
-          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>上位8チームが決勝トーナメント進出。順位＝勝点→得失点差→総得点→（フェアプレー）→FIFAランク。</div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 380 }}>
-              <thead>
-                <tr style={{ color: $.dim, fontSize: 10 }}>
-                  <th style={{ padding: "4px 8px", textAlign: "left" }}>順</th>
-                  <th style={{ padding: "4px 6px" }}>組</th>
-                  <th style={{ padding: "4px 8px", textAlign: "left" }}>チーム</th>
-                  <th style={{ padding: "4px 6px" }}>試</th>
-                  <th style={{ padding: "4px 6px", color: $.gold }}>勝点</th>
-                  <th style={{ padding: "4px 6px" }}>得失</th>
-                  <th style={{ padding: "4px 6px" }}>得点</th>
-                </tr>
-              </thead>
-              <tbody>
-                {thirdRanking.map(function (t) {
-                  return (
-                    <tr key={t.grp} style={{ borderTop: "1px solid " + $.border, background: t.top8 ? "rgba(34,197,94,.12)" : "transparent" }}>
-                      <td style={{ padding: "5px 8px", fontFamily: fontH, fontSize: 14, color: t.top8 ? $.pitchL : $.dim }}>{t.rank}{t.top8 ? " ✓" : ""}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.grp}</td>
-                      <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}><Fl n={t.n} s={13} />{t.n}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.dim }}>{t.mp}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.pts}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: t.gd > 0 ? $.pitchL : t.gd < 0 ? $.redL : $.dim }}>{t.gd > 0 ? "+" : ""}{t.gd}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center" }}>{t.gf}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>緑＝暫定進出（上位8）。フェアプレーポイントは未集計のため、同成績時はFIFAランク（オッズ）順で暫定表示。</div>
-        </div>
-      )}
 
       {/* 決勝トーナメント表（現順位で常時表示） */}
       {hasAnyGroup && (
