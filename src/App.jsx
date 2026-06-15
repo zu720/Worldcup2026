@@ -1736,7 +1736,7 @@ function LiveTab({ tour, liveStarted }) {
   var liveRightD = useMemo(function () { return deriveRounds(liveRightRes, ko); }, [liveRightRes, ko]);
   // 読み取り専用 ctx（クリック無効）
   var noop = function () {};
-  var liveCtx = { ko: ko, des: { A: null, B: null, C: null }, adv: noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop };
+  var liveCtx = { ko: ko, des: { A: null, B: null, C: null }, adv: noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true };
 
   return (
     <div className="fade-in">
@@ -1763,7 +1763,7 @@ function LiveTab({ tour, liveStarted }) {
                 </tr>
               </thead>
               <tbody>
-                {thirdRanking.map(function (t) {
+                {thirdRanking.filter(function (t) { return t.top8; }).map(function (t) {
                   return (
                     <tr key={t.grp} style={{ borderTop: "1px solid " + $.border, background: t.top8 ? "rgba(34,197,94,.12)" : "transparent" }}>
                       <td style={{ padding: "5px 8px", fontFamily: fontH, fontSize: 14, color: t.top8 ? $.pitchL : $.dim }}>{t.rank}{t.top8 ? " ✓" : ""}</td>
@@ -1978,12 +1978,17 @@ function MM({ m, ctx }) {
         <TR t={m.teams[0]} stage="r32" ctx={ctx} seed={m.seeds[0]} />
         <TR t={m.teams[1]} stage="r32" ctx={ctx} seed={m.seeds[1]} />
       </div>
-      {has3 && (
+      {has3 && (ctx.readOnly ? (
+        // 読み取り専用（途中経過）: 候補グループをカード内にコンパクト表示
+        <div style={{ marginTop: 2, padding: "2px 5px", borderRadius: 3, background: $.purple + "18", border: "1px solid " + $.purple + "30", color: $.purpleL, fontSize: 8, textAlign: "center", whiteSpace: "nowrap" }}>
+          3位 {(has3.match(/[A-L]/g) || []).join(" or ")}
+        </div>
+      ) : (
         <div>
           <button onClick={function () { setO(!o); }} style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: $.purple + "20", border: "1px solid " + $.purple + "30", color: $.purpleL, cursor: "pointer", marginTop: 2 }}>3位{o ? "▲" : "▼"}</button>
           {o && <TP3 seed={has3} gl={ctx.gl} tp={ctx.tp} pick3={ctx.pick3} />}
         </div>
-      )}
+      ))}
     </div>
   );
 }
