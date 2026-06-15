@@ -1791,7 +1791,7 @@ function LiveTab({ tour, liveStarted }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 10 }}>
             {Object.keys(GRP).map(function (g) {
               // 試合がまだのグループも枠を表示（0スタート）
-              var rows0 = (groups[g] && groups[g].length) ? groups[g] : GRP[g].map(function (t) { return { n: t.n, mp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 }; });
+              var rows0 = (groups[g] && groups[g].length) ? groups[g] : GRP[g].map(function (t) { return { n: t.n, mp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, yc: 0, rc: 0, fp: 0 }; });
               // 勝点→得失点差→総得点 で並べ替え（同勝点は得失点差で順位）
               var rows = rows0.slice().sort(function (a, b) {
                 return (b.pts || 0) - (a.pts || 0) || ((b.gf || 0) - (b.ga || 0)) - ((a.gf || 0) - (a.ga || 0)) || (b.gf || 0) - (a.gf || 0);
@@ -1809,8 +1809,10 @@ function LiveTab({ tour, liveStarted }) {
                         <th style={{ padding: "4px 4px" }}>勝</th>
                         <th style={{ padding: "4px 4px" }}>分</th>
                         <th style={{ padding: "4px 4px" }}>敗</th>
+                        <th style={{ padding: "4px 4px" }} title="総得点">得点</th>
                         <th style={{ padding: "4px 4px" }}>得失</th>
-                        <th style={{ padding: "4px 8px", color: $.gold }}>勝点</th>
+                        <th style={{ padding: "4px 6px", color: $.gold }}>勝点</th>
+                        <th style={{ padding: "4px 4px" }} title="フェアプレー（黄-1/赤-4）">FP</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1824,8 +1826,10 @@ function LiveTab({ tour, liveStarted }) {
                             <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.w || 0}</td>
                             <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.d || 0}</td>
                             <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.l || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center" }}>{r.gf || 0}</td>
                             <td style={{ padding: "4px 4px", textAlign: "center", color: diff > 0 ? $.pitchL : diff < 0 ? $.redL : $.dim }}>{diff > 0 ? "+" : ""}{diff}</td>
-                            <td style={{ padding: "4px 8px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{r.pts || 0}</td>
+                            <td style={{ padding: "4px 6px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{r.pts || 0}</td>
+                            <td style={{ padding: "4px 4px", textAlign: "center", color: $.dim }} title={"黄" + (r.yc || 0) + " 赤" + (r.rc || 0)}>{r.fp || 0}</td>
                           </tr>
                         );
                       })}
