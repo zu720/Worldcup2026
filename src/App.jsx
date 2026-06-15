@@ -229,6 +229,36 @@ function deriveTpFromTour(ko, groups) {
   return tp;
 }
 
+// 各グループ3位の成績ランキング（勝点→得失点差→総得点→FIFAランク代用=オッズ昇順）。上位8が進出。
+function thirdPlaceRanking(groups) {
+  var thirds = [];
+  Object.keys(GRP).forEach(function (g) {
+    var arr = groups && groups[g];
+    if (arr && arr.length >= 3) {
+      var t = arr[2], team = ft(t.n);
+      thirds.push({ n: t.n, grp: g, mp: t.mp || 0, pts: t.pts || 0, gd: (t.gf || 0) - (t.ga || 0), gf: t.gf || 0, o: team ? team.o : 1000 });
+    }
+  });
+  thirds.sort(function (a, b) { return b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || a.o - b.o; });
+  thirds.forEach(function (t, i) { t.rank = i + 1; t.top8 = i < 8; });
+  return thirds;
+}
+// 上位8の3位を R32 の「3(...)」枠に暫定割当
+function deriveTpProvisional(groups) {
+  var top8 = thirdPlaceRanking(groups).filter(function (t) { return t.top8; });
+  var byGroup = {}; top8.forEach(function (t) { byGroup[t.grp] = t.n; });
+  var allSeeds = [].concat(LR32.flatMap(function (m) { return m.s; }), RR32.flatMap(function (m) { return m.s; })).filter(function (s) { return s && s.startsWith("3("); });
+  var tp = {}, used = {};
+  allSeeds.forEach(function (seed) {
+    var cands = seed.match(/[A-L]/g) || [];
+    for (var i = 0; i < cands.length; i++) {
+      var g = cands[i];
+      if (byGroup[g] && !used[byGroup[g]]) { tp[seed] = byGroup[g]; used[byGroup[g]] = true; break; }
+    }
+  });
+  return tp;
+}
+
 function shuffle(arr){var a=arr.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=a[i];a[i]=a[j];a[j]=tmp;}return a;}
 function generateRandom(mode){var gl2={};Object.keys(GRP).forEach(function(g){var teams=GRP[g].slice();teams.sort(function(a,b){return a.o-b.o;});if(mode==="safe"){var second=shuffle(teams.slice(1,3))[0];gl2[g]=[teams[0].n,second.n];}else if(mode==="upset"){var weak=shuffle(teams.slice(1));gl2[g]=[weak[0].n,weak[1].n];}else{var rest=shuffle(teams.slice(1));gl2[g]=[teams[0].n,rest[0].n];}});var pool=[];Object.values(gl2).forEach(function(a){a.forEach(function(n){var t=ft(n);if(t)pool.push(t);});});var des2={A:null,B:null,C:null};if(pool.length>=3){pool.sort(function(a,b){return a.o-b.o;});var n=pool.length,picks;if(mode==="upset"){var hi=pool.slice(Math.floor(n/2));picks=shuffle(hi).slice(0,3);}else if(mode==="safe"){var lo=pool.slice(0,Math.max(6,Math.ceil(n/2)));picks=shuffle(lo).slice(0,3);}else{picks=shuffle(pool).slice(0,3);}des2.A=(picks[0]||{}).n||null;des2.B=(picks[1]||{}).n||null;des2.C=(picks[2]||{}).n||null;}return{gl:gl2,des:des2};}
 
@@ -1681,7 +1711,10 @@ function LiveTab({ tour, liveStarted }) {
 
   // 実データからブラケット表示用に派生
   var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
-  var liveTp = useMemo(function () { return deriveTpFromTour(ko, groups); }, [ko, groups]);
+  // 実R32があればそれ、無ければ現順位の上位8・3位で暫定割当
+  var liveTp = useMemo(function () { return (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : deriveTpProvisional(groups); }, [ko, groups]);
+  var thirdRanking = useMemo(function () { return thirdPlaceRanking(groups); }, [groups]);
+  var hasAnyGroup = Object.keys(groups || {}).length > 0;
   var liveLeftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
   var liveRightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
   var liveLeftD = useMemo(function () { return deriveRounds(liveLeftRes, ko); }, [liveLeftRes, ko]);
@@ -1845,9 +1878,50 @@ function LiveTab({ tour, liveStarted }) {
         </div>
       )}
 
-      {liveStarted && (
+      {/* 3位チームランキング（上位8が進出） */}
+      {hasAnyGroup && (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 10 }}>🏆 決勝トーナメント進行</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 2 }}>🥉 各組3位ランキング</div>
+          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>上位8チームが決勝トーナメント進出。順位＝勝点→得失点差→総得点→（フェアプレー）→FIFAランク。</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 380 }}>
+              <thead>
+                <tr style={{ color: $.dim, fontSize: 10 }}>
+                  <th style={{ padding: "4px 8px", textAlign: "left" }}>順</th>
+                  <th style={{ padding: "4px 6px" }}>組</th>
+                  <th style={{ padding: "4px 8px", textAlign: "left" }}>チーム</th>
+                  <th style={{ padding: "4px 6px" }}>試</th>
+                  <th style={{ padding: "4px 6px", color: $.gold }}>勝点</th>
+                  <th style={{ padding: "4px 6px" }}>得失</th>
+                  <th style={{ padding: "4px 6px" }}>得点</th>
+                </tr>
+              </thead>
+              <tbody>
+                {thirdRanking.map(function (t) {
+                  return (
+                    <tr key={t.grp} style={{ borderTop: "1px solid " + $.border, background: t.top8 ? "rgba(34,197,94,.12)" : "transparent" }}>
+                      <td style={{ padding: "5px 8px", fontFamily: fontH, fontSize: 14, color: t.top8 ? $.pitchL : $.dim }}>{t.rank}{t.top8 ? " ✓" : ""}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.grp}</td>
+                      <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}><Fl n={t.n} s={13} />{t.n}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.dim }}>{t.mp}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.pts}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center", color: t.gd > 0 ? $.pitchL : t.gd < 0 ? $.redL : $.dim }}>{t.gd > 0 ? "+" : ""}{t.gd}</td>
+                      <td style={{ padding: "5px 6px", textAlign: "center" }}>{t.gf}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>緑＝暫定進出（上位8）。フェアプレーポイントは未集計のため、同成績時はFIFAランク（オッズ）順で暫定表示。</div>
+        </div>
+      )}
+
+      {/* 決勝トーナメント表（現順位で常時表示） */}
+      {hasAnyGroup && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 2 }}>🏆 決勝トーナメント表</div>
+          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>{liveStarted ? "実際の勝ち上がりを表示" : "現在の順位にもとづく暫定組み合わせ（グループ確定で変動）"}</div>
           <BView leftRes={liveLeftRes} rightRes={liveRightRes} leftD={liveLeftD} rightD={liveRightD} ko={ko} ctx={liveCtx} />
           {ko.sf && ko.sf.length >= 2 && <ThirdP ko={ko} adv={noop} />}
         </div>
