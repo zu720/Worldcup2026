@@ -1763,7 +1763,7 @@ function LiveTab({ tour, liveStarted }) {
                 </tr>
               </thead>
               <tbody>
-                {thirdRanking.filter(function (t) { return t.top8; }).map(function (t) {
+                {thirdRanking.map(function (t) {
                   return (
                     <tr key={t.grp} style={{ borderTop: "1px solid " + $.border, background: t.top8 ? "rgba(34,197,94,.12)" : "transparent" }}>
                       <td style={{ padding: "5px 8px", fontFamily: fontH, fontSize: 14, color: t.top8 ? $.pitchL : $.dim }}>{t.rank}{t.top8 ? " ✓" : ""}</td>
@@ -1972,23 +1972,30 @@ function R32C({ ms, ctx }) { return <div style={{ display: "flex", flexDirection
 function MM({ m, ctx }) {
   var [o, setO] = useState(false);
   var has3 = m.seeds ? m.seeds.find(function (s) { return s && s.startsWith("3("); }) : null;
+  // 3位枠の候補チーム名（各候補グループの現3位）。読み取り専用バージョンで使用
+  function third3Slot(seed, idx) {
+    var letters = seed.match(/[A-L]/g) || [];
+    var cands = letters.map(function (g) { return (ctx.gl && ctx.gl[g] || [])[2]; }).filter(Boolean);
+    var label = cands.length ? cands.join(" or ") : "3位 " + letters.join("/");
+    return (
+      <div key={idx} style={{ padding: "3px 6px", minHeight: 22, borderBottom: idx === 0 ? "1px solid " + $.border : "none", fontSize: 8, color: $.purpleL, background: $.purple + "12", display: "flex", alignItems: "center", lineHeight: 1.25, whiteSpace: "normal" }}>{label}</div>
+    );
+  }
   return (
     <div>
       <div style={{ borderRadius: 6, overflow: "hidden", border: "1px solid " + $.border, background: $.card }}>
-        <TR t={m.teams[0]} stage="r32" ctx={ctx} seed={m.seeds[0]} />
-        <TR t={m.teams[1]} stage="r32" ctx={ctx} seed={m.seeds[1]} />
+        {[0, 1].map(function (idx) {
+          var sd = m.seeds[idx];
+          if (ctx.readOnly && sd && sd.startsWith("3(")) return third3Slot(sd, idx);
+          return <TR key={idx} t={m.teams[idx]} stage="r32" ctx={ctx} seed={sd} />;
+        })}
       </div>
-      {has3 && (ctx.readOnly ? (
-        // 読み取り専用（途中経過）: 候補グループをカード内にコンパクト表示
-        <div style={{ marginTop: 2, padding: "2px 5px", borderRadius: 3, background: $.purple + "18", border: "1px solid " + $.purple + "30", color: $.purpleL, fontSize: 8, textAlign: "center", whiteSpace: "nowrap" }}>
-          3位 {(has3.match(/[A-L]/g) || []).join(" or ")}
-        </div>
-      ) : (
+      {has3 && !ctx.readOnly && (
         <div>
           <button onClick={function () { setO(!o); }} style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: $.purple + "20", border: "1px solid " + $.purple + "30", color: $.purpleL, cursor: "pointer", marginTop: 2 }}>3位{o ? "▲" : "▼"}</button>
           {o && <TP3 seed={has3} gl={ctx.gl} tp={ctx.tp} pick3={ctx.pick3} />}
         </div>
-      ))}
+      )}
     </div>
   );
 }
