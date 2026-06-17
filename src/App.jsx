@@ -149,7 +149,7 @@ function calcScore(gl, des, ko, groups) {
 // 試合リスト（round<=3 の終了試合）からグループ星取表を計算
 function computeGroups(matches) {
   var groups = {};
-  Object.keys(GRP).forEach(function (g) { groups[g] = GRP[g].map(function (t) { return { n: t.n, mp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 }; }); });
+  Object.keys(GRP).forEach(function (g) { groups[g] = GRP[g].map(function (t) { return { n: t.n, mp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, yc: 0, rc: 0, fp: 0 }; }); });
   var find = function (g, n) { return groups[g].find(function (t) { return t.n === n; }); };
   (matches || []).forEach(function (m) {
     if ((m.round && m.round > 3) || m.hs == null || m.as == null) return;
@@ -157,8 +157,11 @@ function computeGroups(matches) {
     var H = find(g, m.home), A = find(g, m.away); if (!H || !A) return;
     H.mp++; A.mp++; H.gf += m.hs; H.ga += m.as; A.gf += m.as; A.ga += m.hs;
     if (m.hs > m.as) { H.w++; A.l++; H.pts += 3; } else if (m.hs < m.as) { A.w++; H.l++; A.pts += 3; } else { H.d++; A.d++; H.pts++; A.pts++; }
+    // フェアプレー: 試合に紐づくカード数を集計（手動再計算でも消えない）
+    if (m.cards) { H.yc += m.cards.hy || 0; H.rc += m.cards.hr || 0; A.yc += m.cards.ay || 0; A.rc += m.cards.ar || 0; }
   });
-  Object.keys(groups).forEach(function (g) { groups[g].sort(function (a, b) { return b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf; }); });
+  Object.keys(groups).forEach(function (g) { groups[g].forEach(function (t) { t.fp = -(t.yc + t.rc * 4); }); });
+  Object.keys(groups).forEach(function (g) { groups[g].sort(function (a, b) { return b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf || b.fp - a.fp || (FIFA_RANK[a.n] || 999) - (FIFA_RANK[b.n] || 999); }); });
   return groups;
 }
 
@@ -234,9 +237,12 @@ function deriveTpFromTour(ko, groups) {
 // 各グループ3位の成績ランキング（勝点→得失点差→総得点→FIFAランク代用=オッズ昇順）。上位8が進出。
 function thirdPlaceRanking(groups) {
   var thirds = [];
+  var gcmp = function (a, b) { return (b.pts || 0) - (a.pts || 0) || ((b.gf || 0) - (b.ga || 0)) - ((a.gf || 0) - (a.ga || 0)) || (b.gf || 0) - (a.gf || 0) || ((b.fp != null ? b.fp : -((b.yc || 0) + (b.rc || 0) * 4)) - (a.fp != null ? a.fp : -((a.yc || 0) + (a.rc || 0) * 4))) || (FIFA_RANK[a.n] || 999) - (FIFA_RANK[b.n] || 999); };
   Object.keys(GRP).forEach(function (g) {
-    var arr = groups && groups[g];
-    if (arr && arr.length >= 3) {
+    var arr0 = groups && groups[g];
+    if (arr0 && arr0.length >= 3) {
+      // stored順に依存せず、グループ内を確実にソートして3位を確定
+      var arr = arr0.slice().sort(gcmp);
       var t = arr[2], team = ft(t.n);
       thirds.push({ n: t.n, grp: g, mp: t.mp || 0, pts: t.pts || 0, gd: (t.gf || 0) - (t.ga || 0), gf: t.gf || 0, yc: t.yc || 0, rc: t.rc || 0, fp: (t.fp != null ? t.fp : -((t.yc || 0) + (t.rc || 0) * 4)), fifa: FIFA_RANK[t.n] || 999, o: team ? team.o : 1000 });
     }
@@ -283,6 +289,7 @@ export default function App() {
   var [enterErr, setEnterErr] = useState("");
   var [tour, setTour] = useState({ phase: "pre", groups: {}, ko: { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null }, vote_locked: false }); // 実結果
   var [adminOpen, setAdminOpen] = useState(false);
+  var [rulesOpen, setRulesOpen] = useState(false);
 
   var gk = Object.keys(GRP);
   var allSorted = useMemo(function () { return AT.slice().sort(function (a, b) { return a.o - b.o; }); }, []); // 優勝オッズ昇順（本命→大穴）
@@ -429,7 +436,7 @@ export default function App() {
       <Styles />
       <div style={{ fontFamily: font, background: $.bg, color: $.txt, minHeight: "100vh", paddingBottom: 100 }}>
         <div style={{ position: "fixed", inset: 0, opacity: 0.04, backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
-        <Header tab={tab} setTab={setTab} nm={nm} score={score} logout={logout} tour={tour} openAdmin={function () { setAdminOpen(true); }} />
+        <Header tab={tab} setTab={setTab} nm={nm} score={score} logout={logout} tour={tour} openAdmin={function () { setAdminOpen(true); }} openRules={function () { setRulesOpen(true); }} />
         <main className="main-pad" style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 16px" }}>
           {tab === "vote" && (
             <VoteTab
@@ -443,6 +450,17 @@ export default function App() {
           {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} />}
           {tab === "live" && <LiveTab tour={tour} liveStarted={liveStarted} />}
           {adminOpen && <AdminPanel tour={tour} setTour={setTour} close={function () { setAdminOpen(false); }} />}
+          {rulesOpen && (
+            <div onClick={function () { setRulesOpen(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 20, overflowY: "auto", backdropFilter: "blur(4px)" }}>
+              <div onClick={function (e) { e.stopPropagation(); }} className="fade-in" style={{ width: "100%", maxWidth: 560, background: "linear-gradient(135deg,#1f3f6f,#15294a)", border: "2px solid " + $.gold + "60", borderRadius: 14, padding: 20, marginTop: 24, marginBottom: 24, boxShadow: "0 30px 80px rgba(0,0,0,.6)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ fontFamily: fontH, fontSize: 20, color: $.gold, letterSpacing: 2 }}>📖 遊び方とルール</div>
+                  <button onClick={function () { setRulesOpen(false); }} style={{ fontSize: 12, padding: "4px 12px", borderRadius: 6, background: "transparent", border: "1px solid " + $.border, color: $.txt2, cursor: "pointer" }}>閉じる</button>
+                </div>
+                <RulesBody />
+              </div>
+            </div>
+          )}
         </main>
         {tab === "vote" && <SaveBar saveStatus={saveStatus} savedAt={savedAt} saveNow={saveNow} glComplete={glComplete} score={score} />}
       </div>
@@ -501,7 +519,45 @@ function Gate({ nm, setNm, enter, loading, err }) {
 // ═══════════════════════════════════════════════════════════
 var PHASE_LABEL = { pre: "開幕前", groups: "グループステージ", r32: "ベスト32", r16: "ベスト16", qf: "準々決勝", sf: "準決勝", final: "決勝", done: "閉幕" };
 
-function Header({ tab, setTab, nm, score, logout, tour, openAdmin }) {
+// ルール説明の本文（ヘッダーの📖から開くモーダルで使用）
+function RulesBody() {
+  return (
+    <div style={{ fontSize: 12, color: $.txt, lineHeight: 1.7 }}>
+      <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "linear-gradient(135deg,rgba(251,191,36,.18),rgba(251,191,36,.04))", border: "1px solid " + $.gold + "70" }}>
+        <div style={{ fontFamily: fontH, fontSize: 14, letterSpacing: 2, color: $.gold, marginBottom: 6 }}>🔥 ざっくり言うと</div>
+        <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+          各自が事前に予想した「グループ1・2位」と「推し3チーム」が、<strong style={{ color: $.gold }}>勝ち上がるほど得点</strong>。大穴ほど高得点。最終的に合計点で競います。
+        </div>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <strong style={{ color: $.gold }}>① ポイント計算</strong><br />
+        <code style={{ background: "rgba(0,0,0,.3)", padding: "1px 6px", borderRadius: 3 }}>得点 = 基礎点 × ステージ倍率(累積) × 推し倍率 × 順位ボーナス（推しは決勝・優勝でさらにボーナス）</code><br />
+        <span style={{ color: $.txt2 }}>基礎点</span> = オッズ調整値（大穴ほど高い）<br />
+        <span style={{ color: $.txt2 }}>ステージ倍率（到達ごとに累積）</span><br />
+        　ベスト32 <strong>×0.2</strong> ／ ベスト16 <strong>×3.0</strong> ／ ベスト8 <strong style={{ color: $.gold }}>×5.0(最高)</strong><br />
+        　準決勝 ×2.5 ／ 決勝 ×3.0 ／ 優勝 ×4.0 ／ 3位 ×1.5<br />
+        <span style={{ color: $.txt2 }}>推し倍率</span>: 1推し <strong>×2.5</strong> ／ 2推し ×1.8 ／ 3推し ×1.3（決勝・優勝でさらにボーナス）<br />
+        <span style={{ color: $.pitchL, fontWeight: 700 }}>順位ボーナス</span>: グループ <strong style={{ color: $.gold }}>1位的中 ×1.5</strong> ／ <strong style={{ color: $.goldL }}>2位的中 ×1.25</strong>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <strong style={{ color: $.gold }}>② 得点の確認方法</strong><br />
+        「📊 ランキング」で各プレイヤーをタップ → <strong>「📊 得点内訳」</strong>ボタンで、今の得点が<strong>どのチームの何で入ったか</strong>を1つずつ確認できます。
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <strong style={{ color: $.gold }}>③ 戦略のコツ</strong><br />
+        ・ベスト32は66%が通過するので配点低め<br />
+        ・<strong>ベスト8到達予想が一番効く</strong>（×5.0）<br />
+        ・<strong>1位を当てると更に×1.5</strong><br />
+        ・大穴を「推し」に指定して当てるとスコアが跳ねる
+      </div>
+      <div style={{ paddingTop: 8, borderTop: "1px solid " + $.border, color: $.txt2, fontSize: 11 }}>
+        <strong style={{ color: $.pitchL }}>📊 ランキング</strong>＝リアルタイム順位・各自の予想／<strong style={{ color: $.pitchL }}>⚽ 途中経過</strong>＝グループ星取表・各組3位ランキング・決勝トーナメント表。試合結果が入るたび自動でスコア再計算されます。
+      </div>
+    </div>
+  );
+}
+
+function Header({ tab, setTab, nm, score, logout, tour, openAdmin, openRules }) {
   var phase = (tour && tour.phase) || "pre";
   var phaseLabel = PHASE_LABEL[phase] || phase;
   return (
@@ -525,6 +581,7 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin }) {
               <div className="pulse-glow h-score-val" style={{ fontFamily: fontH, fontSize: 26, color: $.gold, letterSpacing: 1, lineHeight: 1 }}>{score.total.toFixed(1)}</div>
             </div>
           )}
+          <button onClick={openRules} title="ルール・遊び方" className="h-rules-btn" style={{ background: "rgba(251,191,36,.1)", border: "1px solid " + $.gold + "60", color: $.goldL, fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>📖 ルール</button>
           <button onClick={logout} title="名前を変更" className="h-rename-btn" style={{ background: "transparent", border: "1px solid " + $.border, color: $.dim, fontSize: 11, padding: "6px 10px", borderRadius: 6, cursor: "pointer" }}>名前変更</button>
           <button onClick={openAdmin} title="管理者" className="h-admin-btn" style={{ background: "transparent", border: "1px solid " + $.border, color: $.dim, fontSize: 14, padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>⚙️</button>
         </div>
@@ -854,6 +911,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
   var [loading, setLoading] = useState(true);
   var [err, setErr] = useState("");
   var [open, setOpen] = useState(null); // expanded player
+  var [bdOpen, setBdOpen] = useState(null); // 得点内訳を開いているプレイヤー
   var [view, setView] = useState("rank"); // rank | stats
 
   useEffect(function () {
@@ -989,7 +1047,19 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
                   {isMe && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700, flexShrink: 0 }}>あなた</span>}
                   {r.vstyle && <span title="投票傾向" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, background: r.vstyle.bg, border: "1px solid " + r.vstyle.bd + "66", color: r.vstyle.cl, fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>{r.vstyle.emoji}{r.vstyle.l}</span>}
                 </div>
-                <div style={{ flex: 1 }} />
+                <div className="lb-bonuses leaderboard-row-bonuses" style={{ display: "flex", gap: 6, flex: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {(["A", "B", "C"]).map(function (k) {
+                    var n = r.des && r.des[k];
+                    var cfg = DES[k];
+                    if (!n) return <span key={k} className="bonus-chip" style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l}—</span>;
+                    return (
+                      <span key={k} className="bonus-chip" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, padding: "3px 8px", borderRadius: 5, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700 }}>
+                        <span style={{ fontSize: 9, opacity: .8 }}>{cfg.l}</span>
+                        <Fl n={n} s={12} />{n}
+                      </span>
+                    );
+                  })}
+                </div>
                 <div className="lb-side" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, marginLeft: 6, fontSize: 12, lineHeight: 1.25, flexShrink: 0 }}>
                   <div className="lb-stats leaderboard-row-stats" style={{ display: "flex", gap: 8, fontWeight: 700 }}>
                     <span style={{ color: r.hits == null ? $.dim : r.hits > 0 ? $.pitchL : $.txt2 }}>突破{r.hits == null ? "—" : r.hits}/{r.total}</span>
@@ -1032,6 +1102,47 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* 得点内訳 */}
+                  <div style={{ marginTop: 10 }}>
+                    <button onClick={function (e) { e.stopPropagation(); setBdOpen(bdOpen === r.name ? null : r.name); }}
+                      style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: "1px solid " + $.gold + "70", background: bdOpen === r.name ? "rgba(251,191,36,.18)" : "rgba(251,191,36,.06)", color: $.goldL }}>
+                      📊 得点内訳 {bdOpen === r.name ? "▲" : "▼"}
+                    </button>
+                    {bdOpen === r.name && (
+                      <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: "rgba(0,0,0,.25)", border: "1px solid " + $.border, fontSize: 11, lineHeight: 1.6 }}>
+                        <div style={{ color: $.txt2, marginBottom: 8 }}>
+                          <code style={{ background: "rgba(255,255,255,.08)", padding: "1px 5px", borderRadius: 3, color: $.goldL }}>得点 = 基礎点 × ステージ倍率(累積) × 推し倍率 × 順位ボーナス（推しは決勝・優勝でさらにボーナス）</code>
+                          <div style={{ fontSize: 10, color: $.dim, marginTop: 4 }}>
+                            基礎点=オッズ調整値（大穴ほど高い）。ステージ倍率: R32×0.2 / R16×3 / QF×5 / 準決×2.5 / 決勝×3 / 優勝×4 / 3位×1.5（到達ごとに累積）。
+                            推し: 1推し×2.5 / 2推し×1.8 / 3推し×1.3（決勝・優勝でさらにボーナス）。順位的中: 1位×1.5 / 2位×1.25。
+                          </div>
+                        </div>
+                        {(r.score && r.score.bd && r.score.bd.length > 0) ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {r.score.bd.map(function (b, bi) {
+                              return (
+                                <div key={bi} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", padding: "4px 6px", borderRadius: 5, background: "rgba(255,255,255,.03)" }}>
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontWeight: 700, minWidth: 90 }}><Fl n={b.tn} s={12} />{b.tn}</span>
+                                  <span style={{ color: $.dim }}>基礎{b.b}</span>
+                                  {b.stg && b.stg.length > 0 && <span style={{ color: $.pitchL }}>{b.stg.join("→")}</span>}
+                                  {b.dk && <span style={{ color: DES[b.dk].cl, fontWeight: 700 }}>×{DES[b.dk].l}</span>}
+                                  {b.rankBonus && b.rankBonus > 1 && <span style={{ color: $.goldL }}>×順位{b.rankBonus}</span>}
+                                  <span style={{ marginLeft: "auto", fontFamily: fontH, fontSize: 14, color: $.gold }}>+{b.pts.toFixed(1)}</span>
+                                </div>
+                              );
+                            })}
+                            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "baseline", gap: 4, marginTop: 4, paddingTop: 6, borderTop: "1px solid " + $.border }}>
+                              <span style={{ fontSize: 10, color: $.dim }}>合計</span>
+                              <span style={{ fontFamily: fontH, fontSize: 20, color: $.gold }}>{r.score.total.toFixed(1)}</span><span style={{ fontSize: 10, color: $.dim }}>点</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ color: $.dim, fontSize: 11 }}>まだ加点はありません。予想した1位・2位チームが<strong style={{ color: $.txt2 }}>ベスト32以上に進む</strong>と加点されます（暫定順位でも反映）。</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1794,10 +1905,18 @@ function LiveTab({ tour, liveStarted }) {
               var rows0 = (groups[g] && groups[g].length) ? groups[g] : GRP[g].map(function (t) { return { n: t.n, mp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, yc: 0, rc: 0, fp: 0 }; });
               // 勝点→得失点差→総得点 で並べ替え（同勝点は得失点差で順位）
               var rows = rows0.slice().sort(function (a, b) {
-                return (b.pts || 0) - (a.pts || 0) || ((b.gf || 0) - (b.ga || 0)) - ((a.gf || 0) - (a.ga || 0)) || (b.gf || 0) - (a.gf || 0);
+                return (b.pts || 0) - (a.pts || 0) || ((b.gf || 0) - (b.ga || 0)) - ((a.gf || 0) - (a.ga || 0)) || (b.gf || 0) - (a.gf || 0) || ((b.fp || 0) - (a.fp || 0)) || (FIFA_RANK[a.n] || 999) - (FIFA_RANK[b.n] || 999);
               });
               // このグループの試合（両国がこのグループ）
-              var gms = wcMatches.filter(function (m) { return TEAM_GRP[m.home] === g && TEAM_GRP[m.away] === g; }).sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
+              // 全6対戦を生成し、取得済みの結果/日程と突合（取れていない試合も「未定」で必ず表示）
+              var gteams = GRP[g].map(function (t) { return t.n; });
+              var pairs = [];
+              for (var pi = 0; pi < gteams.length; pi++) for (var pj = pi + 1; pj < gteams.length; pj++) pairs.push([gteams[pi], gteams[pj]]);
+              var gms = pairs.map(function (pr) {
+                var mm = wcMatches.find(function (m) { return (m.home === pr[0] && m.away === pr[1]) || (m.home === pr[1] && m.away === pr[0]); });
+                return mm || { home: pr[0], away: pr[1], hs: null, as: null, ts: "", date: "" };
+              });
+              gms.sort(function (a, b) { var ad = a.date || a.ts || "", bd = b.date || b.ts || ""; if (ad && bd) return ad.localeCompare(bd); if (ad) return -1; if (bd) return 1; return 0; });
               return (
                 <div key={g} style={{ borderRadius: 10, border: "1px solid " + $.border, background: $.card, overflow: "hidden" }}>
                   <div style={{ padding: "8px 12px", background: "rgba(245,197,24,.08)", borderBottom: "1px solid " + $.border, fontWeight: 700, color: $.gold, fontSize: 13 }}>グループ {g}</div>
@@ -1837,16 +1956,16 @@ function LiveTab({ tour, liveStarted }) {
                   </table>
                   {gms.length > 0 && (
                     <div style={{ borderTop: "1px solid " + $.border, padding: "6px 10px", background: "rgba(0,0,0,.15)" }}>
-                      <div style={{ fontSize: 9, color: $.dim, marginBottom: 3 }}>試合結果・日程 <span style={{ opacity: .7 }}>（時刻は日本時間）</span></div>
+                      <div style={{ fontSize: 9, color: $.dim, marginBottom: 3 }}>試合結果・日程（全6試合 / 時刻は日本時間）</div>
                       {gms.map(function (m, mi) {
                         var done = m.hs != null && m.as != null;
                         var hw = done && m.hs > m.as, aw = done && m.as > m.hs;
                         var jp = !done ? jstParts(m.ts) : null;
                         return (
                           <div key={mi} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, padding: "2px 0", color: $.txt2 }}>
-                            <span style={{ width: 34, color: $.dim, flexShrink: 0, fontSize: 9 }}>{jp ? jp.date : (m.date || "").slice(5)}</span>
+                            <span style={{ width: 40, color: $.dim, flexShrink: 0, fontSize: 9 }}>{jp ? jp.date + " " + jp.time : (done && m.date ? (m.date || "").slice(5) : "未定")}</span>
                             <span style={{ flex: 1, textAlign: "right", fontWeight: hw ? 700 : 400, color: hw ? $.txt : $.txt2, whiteSpace: "nowrap", overflow: "hidden" }}>{m.home}</span>
-                            <span style={{ fontFamily: fontH, color: done ? $.gold : $.dim, minWidth: 34, textAlign: "center", fontSize: done ? 11 : 9 }}>{done ? m.hs + "-" + m.as : (jp ? jp.time : "vs")}</span>
+                            <span style={{ fontFamily: fontH, color: done ? $.gold : $.dim, minWidth: 28, textAlign: "center", fontSize: done ? 12 : 9 }}>{done ? m.hs + "-" + m.as : "vs"}</span>
                             <span style={{ flex: 1, textAlign: "left", fontWeight: aw ? 700 : 400, color: aw ? $.txt : $.txt2, whiteSpace: "nowrap", overflow: "hidden" }}>{m.away}</span>
                           </div>
                         );

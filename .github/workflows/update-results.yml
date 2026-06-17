@@ -34,6 +34,7 @@ jobs:
           const ja = (n) => NM[n] || n;
           const GRP = {A:["メキシコ","南アフリカ","韓国","チェコ"],B:["カナダ","ボスニア","カタール","スイス"],C:["ブラジル","モロッコ","ハイチ","スコットランド"],D:["アメリカ","パラグアイ","オーストラリア","トルコ"],E:["ドイツ","キュラソー","コートジボワール","エクアドル"],F:["オランダ","日本","スウェーデン","チュニジア"],G:["ベルギー","エジプト","イラン","ニュージーランド"],H:["スペイン","カーボベルデ","サウジアラビア","ウルグアイ"],I:["フランス","セネガル","イラク","ノルウェー"],J:["アルゼンチン","アルジェリア","オーストリア","ヨルダン"],K:["ポルトガル","DRコンゴ","ウズベキスタン","コロンビア"],L:["イングランド","クロアチア","ガーナ","パナマ"]};
           const TG = {}; Object.entries(GRP).forEach(([g,ts]) => ts.forEach(t => TG[t]=g));
+          const FIFA_RANK = {"フランス":1,"スペイン":2,"アルゼンチン":3,"イングランド":4,"ポルトガル":5,"ブラジル":6,"オランダ":7,"モロッコ":8,"ベルギー":9,"ドイツ":10,"クロアチア":11,"コロンビア":13,"セネガル":14,"メキシコ":15,"アメリカ":16,"ウルグアイ":17,"日本":18,"スイス":19,"イラン":21,"トルコ":22,"エクアドル":23,"オーストリア":24,"韓国":25,"オーストラリア":27,"アルジェリア":28,"エジプト":29,"カナダ":30,"ノルウェー":32,"パナマ":33,"コートジボワール":34,"スウェーデン":38,"パラグアイ":40,"チェコ":41,"スコットランド":43,"チュニジア":44,"DRコンゴ":46,"ウズベキスタン":50,"カタール":55,"イラク":57,"南アフリカ":60,"サウジアラビア":61,"ヨルダン":63,"ボスニア":65,"カーボベルデ":69,"ガーナ":74,"キュラソー":82,"ハイチ":83,"ニュージーランド":85};
           const SDB = {"メキシコ":"134497","南アフリカ":"136482","韓国":"134517","チェコ":"133904","カナダ":"140073","ボスニア":"149845","カタール":"136472","スイス":"134506","ブラジル":"134496","モロッコ":"136139","ハイチ":"140175","スコットランド":"136450","アメリカ":"134514","パラグアイ":"136471","オーストラリア":"134500","トルコ":"135985","ドイツ":"133907","キュラソー":"140271","コートジボワール":"134502","エクアドル":"134507","オランダ":"133905","日本":"134503","スウェーデン":"133916","チュニジア":"136142","ベルギー":"134515","エジプト":"136138","イラン":"134511","ニュージーランド":"137449","スペイン":"133909","カーボベルデ":"136477","サウジアラビア":"136137","ウルグアイ":"134504","フランス":"133913","セネガル":"136143","イラク":"140148","ノルウェー":"136516","アルゼンチン":"134509","アルジェリア":"134516","オーストリア":"135986","ヨルダン":"140145","ポルトガル":"133908","DRコンゴ":"136475","ウズベキスタン":"140151","コロンビア":"134501","イングランド":"133914","クロアチア":"133912","ガーナ":"134513","パナマ":"136141"};
 
           async function patch(data) {
@@ -56,7 +57,8 @@ jobs:
 
             // マージ（key=home|away、スコア有を優先、既存prevを保持して結果を失わない）
             const map = {};
-            const put = (m) => { const k = m.home+'|'+m.away; const ex = map[k]; const has = m.hs!=null&&m.as!=null; if (!ex) map[k]=m; else { const eh = ex.hs!=null&&ex.as!=null; if (has&&!eh) map[k]=m; else { if (m.id&&!ex.id) ex.id=m.id; if (m.ts&&!ex.ts) ex.ts=m.ts; } } };
+            // 既存が手動修正(manual)ならAPIで上書きしない。スコア無し→有りのみ置換。id/tsは補完
+            const put = (m) => { const k = m.home+'|'+m.away; const ex = map[k]; const has = m.hs!=null&&m.as!=null; if (!ex) { map[k]=m; return; } if (ex.manual) { if (m.id&&!ex.id) ex.id=m.id; if (m.ts&&!ex.ts) ex.ts=m.ts; return; } const eh = ex.hs!=null&&ex.as!=null; if (has&&!eh) map[k]=m; else { if (m.id&&!ex.id) ex.id=m.id; if (m.ts&&!ex.ts) ex.ts=m.ts; } };
             prev.forEach(put);
             raw.forEach(e => { const m = {date:e.dateEvent||'',ts:e.strTimestamp||'',home:ja(e.strHomeTeam||''),away:ja(e.strAwayTeam||''),hs:(e.intHomeScore==null||e.intHomeScore==='')?null:Number(e.intHomeScore),as:(e.intAwayScore==null||e.intAwayScore==='')?null:Number(e.intAwayScore),round:Number(e.intRound||0),status:e.strStatus||'',id:e.idEvent||''}; if (m.home&&m.away) put(m); });
             const matches = Object.values(map).sort((a,b) => (a.date||'').localeCompare(b.date||''));
@@ -65,16 +67,18 @@ jobs:
             const groups = {}; Object.keys(GRP).forEach(g => groups[g] = GRP[g].map(n => ({n,mp:0,w:0,d:0,l:0,gf:0,ga:0,pts:0,yc:0,rc:0,fp:0})));
             const find = (g,n) => groups[g].find(t => t.n===n);
             matches.forEach(m => { if ((m.round&&m.round>3)||m.hs==null||m.as==null) return; const g=TG[m.home]; if (!g||TG[m.away]!==g) return; const H=find(g,m.home),A=find(g,m.away); if (!H||!A) return; H.mp++;A.mp++;H.gf+=m.hs;H.ga+=m.as;A.gf+=m.as;A.ga+=m.hs; if (m.hs>m.as){H.w++;A.l++;H.pts+=3;} else if (m.hs<m.as){A.w++;H.l++;A.pts+=3;} else {H.d++;A.d++;H.pts++;A.pts++;} });
-            // フェアプレー: 終了グループ戦のtimelineからカード集計
+            // フェアプレー: timelineのカードを「試合ごと」m.cardsに保持。既にあれば再取得しない（累積/節約）
             for (const m of matches) {
-              if ((m.round&&m.round>3)||m.hs==null||m.as==null||!m.id) continue;
-              const g=TG[m.home]; if (!g||TG[m.away]!==g) continue;
+              if (m.hs==null||m.as==null||!m.id||m.cards) continue;
               const tl = await J(`https://www.thesportsdb.com/api/v1/json/3/lookuptimeline.php?id=${m.id}`);
-              (tl.timeline||[]).forEach(x => { const det=(x.strTimelineDetail||'').toLowerCase(); if(!det.includes('card'))return; const tm=find(g,ja(x.strTeam||'')); if(!tm)return; if(det.includes('red'))tm.rc++; else tm.yc++; });
+              let hy=0,hr=0,ay=0,ar=0;
+              (tl.timeline||[]).forEach(x => { const det=(x.strTimelineDetail||'').toLowerCase(); if(!det.includes('card'))return; const tm=ja(x.strTeam||''); const red=det.includes('red'); if(tm===m.home){if(red)hr++;else hy++;} else if(tm===m.away){if(red)ar++;else ay++;} });
+              m.cards={hy,hr,ay,ar};
               await sleep(500);
             }
+            matches.forEach(m => { if((m.round&&m.round>3)||m.hs==null||m.as==null||!m.cards) return; const g=TG[m.home]; if(!g||TG[m.away]!==g) return; const H=find(g,m.home),A=find(g,m.away); if(!H||!A) return; H.yc+=m.cards.hy||0;H.rc+=m.cards.hr||0;A.yc+=m.cards.ay||0;A.rc+=m.cards.ar||0; });
             Object.keys(groups).forEach(g => groups[g].forEach(t => { t.fp = -(t.yc*1 + t.rc*4); }));
-            Object.keys(groups).forEach(g => groups[g].sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf||b.fp-a.fp));
+            Object.keys(groups).forEach(g => groups[g].sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf||b.fp-a.fp||(FIFA_RANK[a.n]||999)-(FIFA_RANK[b.n]||999)));
             const played = matches.some(m => (!m.round||m.round<=3) && m.hs!=null);
 
             // ノックアウト（round>=4 の終了試合の勝者）ベストエフォート
