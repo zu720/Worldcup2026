@@ -19,26 +19,28 @@ import { hasSupabase } from "./lib/supabase";
 // Theme
 // ═══════════════════════════════════════════════════════════
 var $ = {
-  bg: "linear-gradient(135deg,#1e3a5f 0%,#3a6ea8 45%,#5894d2 100%)",
-  card: "rgba(255,255,255,.13)",
-  cardB: "rgba(255,255,255,.20)",
-  gold: "#fbbf24",
-  goldL: "#fde68a",
-  goldD: "#b45309",
-  pitchL: "#34d399",
-  pitch: "#059669",
-  red: "#f87171",
-  redL: "#fca5a5",
-  blue: "#3b82f6",
-  blueL: "#93c5fd",
-  purple: "#a855f7",
-  purpleL: "#d8b4fe",
-  txt: "#ffffff",
-  txt2: "#e2e8f0",
-  dim: "#a8b8cc",
-  border: "rgba(255,255,255,.22)",
-  glow: "0 0 24px rgba(251,191,36,.6)",
-  glowS: "0 0 12px rgba(251,191,36,.45)",
+  // 公式中継のようなディープネイビー基調＋上部に控えめなスタジアム光
+  bg: "radial-gradient(1100px 460px at 50% -8%, rgba(56,110,170,.20), transparent 70%), #0b1524",
+  panel: "#0f1c30",            // ヘッダー/モーダル等の面
+  card: "rgba(255,255,255,.045)",
+  cardB: "rgba(255,255,255,.085)",
+  gold: "#f4c14b",
+  goldL: "#ffd97a",
+  goldD: "#9a7016",
+  pitchL: "#3ddc97",
+  pitch: "#10b981",
+  red: "#f06d6d",
+  redL: "#f8a3a3",
+  blue: "#5b9be8",
+  blueL: "#9cc3f5",
+  purple: "#b07be0",
+  purpleL: "#d4b3f0",
+  txt: "#f3f6fb",
+  txt2: "#c2cddd",
+  dim: "#7e8da4",
+  border: "rgba(255,255,255,.10)",
+  glow: "0 8px 28px rgba(0,0,0,.45)",
+  glowS: "0 3px 12px rgba(0,0,0,.32)",
 };
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
@@ -2185,10 +2187,9 @@ function Styles() {
       ::-webkit-scrollbar{width:6px;height:6px}
       ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
       @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-      @keyframes pulse{0%,100%{transform:scale(1);box-shadow:0 0 24px rgba(245,197,24,.45)}50%{transform:scale(1.04);box-shadow:0 0 36px rgba(245,197,24,.7)}}
-      @keyframes pulseGlow{0%,100%{text-shadow:0 0 20px rgba(245,197,24,.5)}50%{text-shadow:0 0 36px rgba(245,197,24,.85)}}
-      .fade-in{animation:fadeUp .5s ease both}
-      .pulse-glow{animation:pulseGlow 2.5s ease-in-out infinite}
+      @keyframes pulse{0%,100%{opacity:.65}50%{opacity:1}}
+      .fade-in{animation:fadeUp .45s ease both}
+      .pulse-glow{}
       button{transition:background-color .15s ease,border-color .15s ease,color .15s ease,box-shadow .2s ease,transform .15s ease}
       .qv-card:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
       .qv-chip:hover{transform:translateY(-1px);filter:brightness(1.15)}
