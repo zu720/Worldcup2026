@@ -95,6 +95,10 @@ var DES = {
 };
 var LR32=[{id:73,s:["2A","2B"]},{id:74,s:["1C","2F"]},{id:75,s:["1E","3(A/B/C/D/F)"]},{id:76,s:["1F","2C"]},{id:77,s:["2E","2I"]},{id:78,s:["1I","3(C/D/F/G/H)"]},{id:79,s:["1A","3(C/E/F/H/I)"]},{id:80,s:["1L","3(E/H/I/J/K)"]}];
 var RR32=[{id:81,s:["1G","3(A/E/H/I/J)"]},{id:82,s:["1D","3(B/E/F/I/J)"]},{id:83,s:["1H","2J"]},{id:84,s:["2K","2L"]},{id:85,s:["1B","3(E/F/G/I/J)"]},{id:86,s:["2D","2G"]},{id:87,s:["1J","2H"]},{id:88,s:["1K","3(D/E/I/J/L)"]}];
+// FIFA公式「3位チーム割当表」(Annexe C, 全495通り) — 進出8グループ(昇順)→各3位枠の割当
+// 値の各文字は下記TP_SLOTSの順(FIFA試合74,77,79,80,81,82,85,87)に対応するグループ。teemula35/punditbench(規定PDFを機械検証)由来、独自に全495件をbijection/候補集合で再検証済み。
+var TP_SLOTS=["3(A/B/C/D/F)","3(C/D/F/G/H)","3(C/E/F/H/I)","3(E/H/I/J/K)","3(B/E/F/I/J)","3(A/E/H/I/J)","3(E/F/G/I/J)","3(D/E/I/J/L)"];
+var TP_ALLOC={ABCDEFGH:"CFHEBAGD",ABCDEFGI:"DFCIBAGE",ABCDEFGJ:"DFCJBAGE",ABCDEFGK:"DFCKBAGE",ABCDEFGL:"DFCEBAGL",ABCDEFHI:"CFHIBAED",ABCDEFHJ:"CFHEBAJD",ABCDEFHK:"CFHKBAED",ABCDEFHL:"CDHEBAFL",ABCDEFIJ:"DFCIBAJE",ABCDEFIK:"DFCKBAEI",ABCDEFIL:"DFCIBAEL",ABCDEFJK:"DFCKBAJE",ABCDEFJL:"DFCEBAJL",ABCDEFKL:"DFCKBAEL",ABCDEGHI:"CDHIBAGE",ABCDEGHJ:"CDHJBAGE",ABCDEGHK:"CDHKBAGE",ABCDEGHL:"CDHEBAGL",ABCDEGIJ:"CDEJBAGI",ABCDEGIK:"CDEKBAGI",ABCDEGIL:"CDEIBAGL",ABCDEGJK:"CDEKBAGJ",ABCDEGJL:"CDEJBAGL",ABCDEGKL:"CDEKBAGL",ABCDEHIJ:"CDHIBAJE",ABCDEHIK:"CDHKBAEI",ABCDEHIL:"CDHIBAEL",ABCDEHJK:"CDHKBAJE",ABCDEHJL:"CDHEBAJL",ABCDEHKL:"CDHKBAEL",ABCDEIJK:"CDEKBAJI",ABCDEIJL:"CDEIBAJL",ABCDEIKL:"CDEKBAIL",ABCDEJKL:"CDEKBAJL",ABCDFGHI:"CFHIBAGD",ABCDFGHJ:"CFHJBAGD",ABCDFGHK:"CFHKBAGD",ABCDFGHL:"DFCHBAGL",ABCDFGIJ:"DFCJBAGI",ABCDFGIK:"DFCKBAGI",ABCDFGIL:"DFCIBAGL",ABCDFGJK:"DFCKBAGJ",ABCDFGJL:"DFCJBAGL",ABCDFGKL:"DFCKBAGL",ABCDFHIJ:"CFHIBAJD",ABCDFHIK:"CDHKBAFI",ABCDFHIL:"CDHIBAFL",ABCDFHJK:"CFHKBAJD",ABCDFHJL:"DFCHBAJL",ABCDFHKL:"CDHKBAFL",ABCDFIJK:"DFCKBAJI",ABCDFIJL:"DFCIBAJL",ABCDFIKL:"DFCKBAIL",ABCDFJKL:"DFCKBAJL",ABCDGHIJ:"CDHJBAGI",ABCDGHIK:"CDHKBAGI",ABCDGHIL:"CDHIBAGL",ABCDGHJK:"CDHKBAGJ",ABCDGHJL:"CDHJBAGL",ABCDGHKL:"CDHKBAGL",ABCDGIJK:"DGCKBAJI",ABCDGIJL:"DGCIBAJL",ABCDGIKL:"CDIKBAGL",ABCDGJKL:"DGCKBAJL",ABCDHIJK:"CDHKBAJI",ABCDHIJL:"CDHIBAJL",ABCDHIKL:"CDHKBAIL",ABCDHJKL:"CDHKBAJL",ABCDIJKL:"CDIKBAJL",ABCEFGHI:"CFHIBAGE",ABCEFGHJ:"CFHJBAGE",ABCEFGHK:"CFHKBAGE",ABCEFGHL:"CFHEBAGL",ABCEFGIJ:"CFEJBAGI",ABCEFGIK:"CFEKBAGI",ABCEFGIL:"CFEIBAGL",ABCEFGJK:"CFEKBAGJ",ABCEFGJL:"CFEJBAGL",ABCEFGKL:"CFEKBAGL",ABCEFHIJ:"CFHIBAJE",ABCEFHIK:"CFHKBAEI",ABCEFHIL:"CFHIBAEL",ABCEFHJK:"CFHKBAJE",ABCEFHJL:"CFHEBAJL",ABCEFHKL:"CFHKBAEL",ABCEFIJK:"CFEKBAJI",ABCEFIJL:"CFEIBAJL",ABCEFIKL:"CFEKBAIL",ABCEFJKL:"CFEKBAJL",ABCEGHIJ:"CGHIBAJE",ABCEGHIK:"CHEKBAGI",ABCEGHIL:"CHEIBAGL",ABCEGHJK:"CGHKBAJE",ABCEGHJL:"CGHEBAJL",ABCEGHKL:"CHEKBAGL",ABCEGIJK:"CGEKBAJI",ABCEGIJL:"CGEIBAJL",ABCEGIKL:"ACEKBIGL",ABCEGJKL:"CGEKBAJL",ABCEHIJK:"CHEKBAJI",ABCEHIJL:"CHEIBAJL",ABCEHIKL:"CHEKBAIL",ABCEHJKL:"CHEKBAJL",ABCEIJKL:"ACEKBIJL",ABCFGHIJ:"CFHJBAGI",ABCFGHIK:"CFHKBAGI",ABCFGHIL:"CFHIBAGL",ABCFGHJK:"CFHKBAGJ",ABCFGHJL:"CFHJBAGL",ABCFGHKL:"CFHKBAGL",ABCFGIJK:"FGCKBAJI",ABCFGIJL:"FGCIBAJL",ABCFGIKL:"CFIKBAGL",ABCFGJKL:"FGCKBAJL",ABCFHIJK:"CFHKBAJI",ABCFHIJL:"CFHIBAJL",ABCFHIKL:"CFHKBAIL",ABCFHJKL:"CFHKBAJL",ABCFIJKL:"CFIKBAJL",ABCGHIJK:"CGHKBAJI",ABCGHIJL:"CGHIBAJL",ABCGHIKL:"CHIKBAGL",ABCGHJKL:"CGHKBAJL",ABCGIJKL:"CGIKBAJL",ABCHIJKL:"CHIKBAJL",ABDEFGHI:"DFHIBAGE",ABDEFGHJ:"DFHJBAGE",ABDEFGHK:"DFHKBAGE",ABDEFGHL:"DFHEBAGL",ABDEFGIJ:"DFEJBAGI",ABDEFGIK:"DFEKBAGI",ABDEFGIL:"DFEIBAGL",ABDEFGJK:"DFEKBAGJ",ABDEFGJL:"DFEJBAGL",ABDEFGKL:"DFEKBAGL",ABDEFHIJ:"DFHIBAJE",ABDEFHIK:"DFHKBAEI",ABDEFHIL:"DFHIBAEL",ABDEFHJK:"DFHKBAJE",ABDEFHJL:"DFHEBAJL",ABDEFHKL:"DFHKBAEL",ABDEFIJK:"DFEKBAJI",ABDEFIJL:"DFEIBAJL",ABDEFIKL:"DFEKBAIL",ABDEFJKL:"DFEKBAJL",ABDEGHIJ:"DGHIBAJE",ABDEGHIK:"DHEKBAGI",ABDEGHIL:"DHEIBAGL",ABDEGHJK:"DGHKBAJE",ABDEGHJL:"DGHEBAJL",ABDEGHKL:"DHEKBAGL",ABDEGIJK:"DGEKBAJI",ABDEGIJL:"DGEIBAJL",ABDEGIKL:"ADEKBIGL",ABDEGJKL:"DGEKBAJL",ABDEHIJK:"DHEKBAJI",ABDEHIJL:"DHEIBAJL",ABDEHIKL:"DHEKBAIL",ABDEHJKL:"DHEKBAJL",ABDEIJKL:"ADEKBIJL",ABDFGHIJ:"DFHJBAGI",ABDFGHIK:"DFHKBAGI",ABDFGHIL:"DFHIBAGL",ABDFGHJK:"DFHKBAGJ",ABDFGHJL:"DFHJBAGL",ABDFGHKL:"DFHKBAGL",ABDFGIJK:"DGFKBAJI",ABDFGIJL:"DGFIBAJL",ABDFGIKL:"DFIKBAGL",ABDFGJKL:"DGFKBAJL",ABDFHIJK:"DFHKBAJI",ABDFHIJL:"DFHIBAJL",ABDFHIKL:"DFHKBAIL",ABDFHJKL:"DFHKBAJL",ABDFIJKL:"DFIKBAJL",ABDGHIJK:"DGHKBAJI",ABDGHIJL:"DGHIBAJL",ABDGHIKL:"DHIKBAGL",ABDGHJKL:"DGHKBAJL",ABDGIJKL:"DGIKBAJL",ABDHIJKL:"DHIKBAJL",ABEFGHIJ:"FGHIBAJE",ABEFGHIK:"FHEKBAGI",ABEFGHIL:"FHEIBAGL",ABEFGHJK:"FGHKBAJE",ABEFGHJL:"FGHEBAJL",ABEFGHKL:"FHEKBAGL",ABEFGIJK:"FGEKBAJI",ABEFGIJL:"FGEIBAJL",ABEFGIKL:"AFEKBIGL",ABEFGJKL:"FGEKBAJL",ABEFHIJK:"FHEKBAJI",ABEFHIJL:"FHEIBAJL",ABEFHIKL:"FHEKBAIL",ABEFHJKL:"FHEKBAJL",ABEFIJKL:"AFEKBIJL",ABEGHIJK:"AGEKBHJI",ABEGHIJL:"AGEIBHJL",ABEGHIKL:"AHEKBIGL",ABEGHJKL:"AGEKBHJL",ABEGIJKL:"AGEKBIJL",ABEHIJKL:"AHEKBIJL",ABFGHIJK:"FGHKBAJI",ABFGHIJL:"FGHIBAJL",ABFGHIKL:"AFHKBIGL",ABFGHJKL:"FGHKBAJL",ABFGIJKL:"FGIKBAJL",ABFHIJKL:"AFHKBIJL",ABGHIJKL:"AGHKBIJL",ACDEFGHI:"CFHIEAGD",ACDEFGHJ:"CFHEJAGD",ACDEFGHK:"CFHKEAGD",ACDEFGHL:"CDHEFAGL",ACDEFGIJ:"DFCIJAGE",ACDEFGIK:"DFCKEAGI",ACDEFGIL:"DFCIEAGL",ACDEFGJK:"DFCKJAGE",ACDEFGJL:"DFCEJAGL",ACDEFGKL:"DFCKEAGL",ACDEFHIJ:"CFHIEAJD",ACDEFHIK:"CDHKFAEI",ACDEFHIL:"CDHIFAEL",ACDEFHJK:"CFHKEAJD",ACDEFHJL:"CDHEFAJL",ACDEFHKL:"CDHKFAEL",ACDEFIJK:"DFCKEAJI",ACDEFIJL:"DFCIEAJL",ACDEFIKL:"DFCKIAEL",ACDEFJKL:"DFCKEAJL",ACDEGHIJ:"CDHIJAGE",ACDEGHIK:"CDHKEAGI",ACDEGHIL:"CDHIEAGL",ACDEGHJK:"CDHKJAGE",ACDEGHJL:"CDHEJAGL",ACDEGHKL:"CDHKEAGL",ACDEGIJK:"CDEKJAGI",ACDEGIJL:"CDEIJAGL",ACDEGIKL:"CDEKIAGL",ACDEGJKL:"CDEKJAGL",ACDEHIJK:"CDHKEAJI",ACDEHIJL:"CDHIEAJL",ACDEHIKL:"CDHKIAEL",ACDEHJKL:"CDHKEAJL",ACDEIJKL:"CDEKIAJL",ACDFGHIJ:"CFHIJAGD",ACDFGHIK:"CDHKFAGI",ACDFGHIL:"CDHIFAGL",ACDFGHJK:"CFHKJAGD",ACDFGHJL:"DFCHJAGL",ACDFGHKL:"CDHKFAGL",ACDFGIJK:"DFCKJAGI",ACDFGIJL:"DFCIJAGL",ACDFGIKL:"DFCKIAGL",ACDFGJKL:"DFCKJAGL",ACDFHIJK:"CDHKFAJI",ACDFHIJL:"CDHIFAJL",ACDFHIKL:"CDHKIAFL",ACDFHJKL:"CDHKFAJL",ACDFIJKL:"DFCKIAJL",ACDGHIJK:"CDHKJAGI",ACDGHIJL:"CDHIJAGL",ACDGHIKL:"CDHKIAGL",ACDGHJKL:"CDHKJAGL",ACDGIJKL:"CDIKJAGL",ACDHIJKL:"CDHKIAJL",ACEFGHIJ:"CFHIJAGE",ACEFGHIK:"CFHKEAGI",ACEFGHIL:"CFHIEAGL",ACEFGHJK:"CFHKJAGE",ACEFGHJL:"CFHEJAGL",ACEFGHKL:"CFHKEAGL",ACEFGIJK:"CFEKJAGI",ACEFGIJL:"CFEIJAGL",ACEFGIKL:"CFEKIAGL",ACEFGJKL:"CFEKJAGL",ACEFHIJK:"CFHKEAJI",ACEFHIJL:"CFHIEAJL",ACEFHIKL:"CFHKIAEL",ACEFHJKL:"CFHKEAJL",ACEFIJKL:"CFEKIAJL",ACEGHIJK:"CHEKJAGI",ACEGHIJL:"CHEIJAGL",ACEGHIKL:"CHEKIAGL",ACEGHJKL:"CHEKJAGL",ACEGIJKL:"CGEKIAJL",ACEHIJKL:"CHEKIAJL",ACFGHIJK:"CFHKJAGI",ACFGHIJL:"CFHIJAGL",ACFGHIKL:"CFHKIAGL",ACFGHJKL:"CFHKJAGL",ACFGIJKL:"CFIKJAGL",ACFHIJKL:"CFHKIAJL",ACGHIJKL:"CGHKIAJL",ADEFGHIJ:"DFHIJAGE",ADEFGHIK:"DFHKEAGI",ADEFGHIL:"DFHIEAGL",ADEFGHJK:"DFHKJAGE",ADEFGHJL:"DFHEJAGL",ADEFGHKL:"DFHKEAGL",ADEFGIJK:"DFEKJAGI",ADEFGIJL:"DFEIJAGL",ADEFGIKL:"DFEKIAGL",ADEFGJKL:"DFEKJAGL",ADEFHIJK:"DFHKEAJI",ADEFHIJL:"DFHIEAJL",ADEFHIKL:"DFHKIAEL",ADEFHJKL:"DFHKEAJL",ADEFIJKL:"DFEKIAJL",ADEGHIJK:"DHEKJAGI",ADEGHIJL:"DHEIJAGL",ADEGHIKL:"DHEKIAGL",ADEGHJKL:"DHEKJAGL",ADEGIJKL:"DGEKIAJL",ADEHIJKL:"DHEKIAJL",ADFGHIJK:"DFHKJAGI",ADFGHIJL:"DFHIJAGL",ADFGHIKL:"DFHKIAGL",ADFGHJKL:"DFHKJAGL",ADFGIJKL:"DFIKJAGL",ADFHIJKL:"DFHKIAJL",ADGHIJKL:"DGHKIAJL",AEFGHIJK:"FHEKJAGI",AEFGHIJL:"FHEIJAGL",AEFGHIKL:"FHEKIAGL",AEFGHJKL:"FHEKJAGL",AEFGIJKL:"FGEKIAJL",AEFHIJKL:"FHEKIAJL",AEGHIJKL:"AGEKIHJL",AFGHIJKL:"FGHKIAJL",BCDEFGHI:"DFCIBHGE",BCDEFGHJ:"CFHEBJGD",BCDEFGHK:"DFCKBHGE",BCDEFGHL:"DFCEBHGL",BCDEFGIJ:"DFCIBJGE",BCDEFGIK:"DFCKBEGI",BCDEFGIL:"DFCIBEGL",BCDEFGJK:"DFCKBJGE",BCDEFGJL:"DFCEBJGL",BCDEFGKL:"DFCKBEGL",BCDEFHIJ:"DFCIBHJE",BCDEFHIK:"DFCKBHEI",BCDEFHIL:"DFCIBHEL",BCDEFHJK:"DFCKBHJE",BCDEFHJL:"DFCEBHJL",BCDEFHKL:"DFCKBHEL",BCDEFIJK:"DFCKBEJI",BCDEFIJL:"DFCIBEJL",BCDEFIKL:"DFCKBIEL",BCDEFJKL:"DFCKBEJL",BCDEGHIJ:"CDHIBJGE",BCDEGHIK:"CDEKBHGI",BCDEGHIL:"CDEIBHGL",BCDEGHJK:"CDHKBJGE",BCDEGHJL:"CDHEBJGL",BCDEGHKL:"CDEKBHGL",BCDEGIJK:"CDEKBJGI",BCDEGIJL:"CDEIBJGL",BCDEGIKL:"CDEKBIGL",BCDEGJKL:"CDEKBJGL",BCDEHIJK:"CDEKBHJI",BCDEHIJL:"CDEIBHJL",BCDEHIKL:"CDEKBHIL",BCDEHJKL:"CDEKBHJL",BCDEIJKL:"CDEKBIJL",BCDFGHIJ:"CFHIBJGD",BCDFGHIK:"DFCKBHGI",BCDFGHIL:"DFCIBHGL",BCDFGHJK:"CFHKBJGD",BCDFGHJL:"DFCJBHGL",BCDFGHKL:"DFCKBHGL",BCDFGIJK:"DFCKBJGI",BCDFGIJL:"DFCIBJGL",BCDFGIKL:"DFCKBIGL",BCDFGJKL:"DFCKBJGL",BCDFHIJK:"DFCKBHJI",BCDFHIJL:"DFCIBHJL",BCDFHIKL:"DFCKBHIL",BCDFHJKL:"DFCKBHJL",BCDFIJKL:"DFCKBIJL",BCDGHIJK:"CDHKBJGI",BCDGHIJL:"CDHIBJGL",BCDGHIKL:"CDHKBIGL",BCDGHJKL:"CDHKBJGL",BCDGIJKL:"CDIKBJGL",BCDHIJKL:"CDHKBIJL",BCEFGHIJ:"CFHIBJGE",BCEFGHIK:"CFEKBHGI",BCEFGHIL:"CFEIBHGL",BCEFGHJK:"CFHKBJGE",BCEFGHJL:"CFHEBJGL",BCEFGHKL:"CFEKBHGL",BCEFGIJK:"CFEKBJGI",BCEFGIJL:"CFEIBJGL",BCEFGIKL:"CFEKBIGL",BCEFGJKL:"CFEKBJGL",BCEFHIJK:"CFEKBHJI",BCEFHIJL:"CFEIBHJL",BCEFHIKL:"CFEKBHIL",BCEFHJKL:"CFEKBHJL",BCEFIJKL:"CFEKBIJL",BCEGHIJK:"CGEKBHJI",BCEGHIJL:"CGEIBHJL",BCEGHIKL:"CHEKBIGL",BCEGHJKL:"CGEKBHJL",BCEGIJKL:"CGEKBIJL",BCEHIJKL:"CHEKBIJL",BCFGHIJK:"CFHKBJGI",BCFGHIJL:"CFHIBJGL",BCFGHIKL:"CFHKBIGL",BCFGHJKL:"CFHKBJGL",BCFGIJKL:"CFIKBJGL",BCFHIJKL:"CFHKBIJL",BCGHIJKL:"CGHKBIJL",BDEFGHIJ:"DFHIBJGE",BDEFGHIK:"DFEKBHGI",BDEFGHIL:"DFEIBHGL",BDEFGHJK:"DFHKBJGE",BDEFGHJL:"DFHEBJGL",BDEFGHKL:"DFEKBHGL",BDEFGIJK:"DFEKBJGI",BDEFGIJL:"DFEIBJGL",BDEFGIKL:"DFEKBIGL",BDEFGJKL:"DFEKBJGL",BDEFHIJK:"DFEKBHJI",BDEFHIJL:"DFEIBHJL",BDEFHIKL:"DFEKBHIL",BDEFHJKL:"DFEKBHJL",BDEFIJKL:"DFEKBIJL",BDEGHIJK:"DGEKBHJI",BDEGHIJL:"DGEIBHJL",BDEGHIKL:"DHEKBIGL",BDEGHJKL:"DGEKBHJL",BDEGIJKL:"DGEKBIJL",BDEHIJKL:"DHEKBIJL",BDFGHIJK:"DFHKBJGI",BDFGHIJL:"DFHIBJGL",BDFGHIKL:"DFHKBIGL",BDFGHJKL:"DFHKBJGL",BDFGIJKL:"DFIKBJGL",BDFHIJKL:"DFHKBIJL",BDGHIJKL:"DGHKBIJL",BEFGHIJK:"FGEKBHJI",BEFGHIJL:"FGEIBHJL",BEFGHIKL:"FHEKBIGL",BEFGHJKL:"FGEKBHJL",BEFGIJKL:"FGEKBIJL",BEFHIJKL:"FHEKBIJL",BEGHIJKL:"BGEKIHJL",BFGHIJKL:"FGHKBIJL",CDEFGHIJ:"DFCIJHGE",CDEFGHIK:"DFCKEHGI",CDEFGHIL:"DFCIEHGL",CDEFGHJK:"DFCKJHGE",CDEFGHJL:"DFCEJHGL",CDEFGHKL:"DFCKEHGL",CDEFGIJK:"DFCKEJGI",CDEFGIJL:"DFCIEJGL",CDEFGIKL:"DFCKEIGL",CDEFGJKL:"DFCKEJGL",CDEFHIJK:"DFCKEHJI",CDEFHIJL:"DFCIEHJL",CDEFHIKL:"DFCKIHEL",CDEFHJKL:"DFCKEHJL",CDEFIJKL:"DFCKEIJL",CDEGHIJK:"CDEKJHGI",CDEGHIJL:"CDEIJHGL",CDEGHIKL:"CDEKIHGL",CDEGHJKL:"CDEKJHGL",CDEGIJKL:"CDEKIJGL",CDEHIJKL:"CDEKIHJL",CDFGHIJK:"DFCKJHGI",CDFGHIJL:"DFCIJHGL",CDFGHIKL:"DFCKIHGL",CDFGHJKL:"DFCKJHGL",CDFGIJKL:"DFCKIJGL",CDFHIJKL:"DFCKIHJL",CDGHIJKL:"CDHKIJGL",CEFGHIJK:"CFEKJHGI",CEFGHIJL:"CFEIJHGL",CEFGHIKL:"CFEKIHGL",CEFGHJKL:"CFEKJHGL",CEFGIJKL:"CFEKIJGL",CEFHIJKL:"CFEKIHJL",CEGHIJKL:"CGEKIHJL",CFGHIJKL:"CFHKIJGL",DEFGHIJK:"DFEKJHGI",DEFGHIJL:"DFEIJHGL",DEFGHIKL:"DFEKIHGL",DEFGHJKL:"DFEKJHGL",DEFGIJKL:"DFEKIJGL",DEFHIJKL:"DFEKIHJL",DEGHIJKL:"DGEKIHJL",DFGHIJKL:"DFHKIJGL",EFGHIJKL:"FGEKIHJL"};
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
@@ -254,19 +258,16 @@ function thirdPlaceRanking(groups) {
   thirds.forEach(function (t, i) { t.rank = i + 1; t.top8 = i < 8; });
   return thirds;
 }
-// 上位8の3位を R32 の「3(...)」枠に暫定割当
+// 上位8グループの3位を FIFA公式割当表(TP_ALLOC, 495通り)で R32 の「3(...)」枠に割当。
+// 候補集合だけでは6〜72通りに分岐するため、二部マッチングでなく公式表を引く必要がある。
 function deriveTpProvisional(groups) {
   var top8 = thirdPlaceRanking(groups).filter(function (t) { return t.top8; });
+  if (top8.length < 8) return {}; // 12グループ分の3位が出揃うまでは未確定（枠は「A or B…」表示のまま）
   var byGroup = {}; top8.forEach(function (t) { byGroup[t.grp] = t.n; });
-  var allSeeds = [].concat(LR32.flatMap(function (m) { return m.s; }), RR32.flatMap(function (m) { return m.s; })).filter(function (s) { return s && s.startsWith("3("); });
-  var tp = {}, used = {};
-  allSeeds.forEach(function (seed) {
-    var cands = seed.match(/[A-L]/g) || [];
-    for (var i = 0; i < cands.length; i++) {
-      var g = cands[i];
-      if (byGroup[g] && !used[byGroup[g]]) { tp[seed] = byGroup[g]; used[byGroup[g]] = true; break; }
-    }
-  });
+  var key = top8.map(function (t) { return t.grp; }).sort().join(""); // 進出8グループ(昇順)
+  var asg = TP_ALLOC[key]; if (!asg) return {};
+  var tp = {};
+  for (var i = 0; i < TP_SLOTS.length; i++) { var g = asg[i]; if (byGroup[g]) tp[TP_SLOTS[i]] = byGroup[g]; }
   return tp;
 }
 
@@ -1315,7 +1316,20 @@ function AdminPanel({ tour, setTour, close }) {
   var [mAway, setMAway] = useState("");
   var [mHs, setMHs] = useState("");
   var [mAs, setMAs] = useState("");
+  var [mHy, setMHy] = useState(""); var [mHr, setMHr] = useState(""); // ホーム 黄/赤
+  var [mAy, setMAy] = useState(""); var [mAr, setMAr] = useState(""); // アウェイ 黄/赤
   var [mMsg, setMMsg] = useState("");
+  // チーム選択時に既存試合の値（スコア・カード）を読み込む
+  function loadExisting(home, away) {
+    var ms = (tour && tour.ko && tour.ko.matches) || [];
+    var mm = ms.find(function (m) { return (m.home === home && m.away === away) || (m.home === away && m.away === home); });
+    if (!mm) { setMHs(""); setMAs(""); setMHy(""); setMHr(""); setMAy(""); setMAr(""); return; }
+    var rev = mm.home !== home; // 保存が逆順なら入れ替え
+    setMHs(String(rev ? (mm.as ?? "") : (mm.hs ?? ""))); setMAs(String(rev ? (mm.hs ?? "") : (mm.as ?? "")));
+    var c = mm.cards || {};
+    setMHy(String((rev ? c.ay : c.hy) || "")); setMHr(String((rev ? c.ar : c.hr) || ""));
+    setMAy(String((rev ? c.hy : c.ay) || "")); setMAr(String((rev ? c.hr : c.ar) || ""));
+  }
 
   function doUnlock() {
     if (pw === ADMIN_PW) { setUnlocked(true); setPwErr(""); }
@@ -1352,18 +1366,22 @@ function AdminPanel({ tour, setTour, close }) {
     setMMsg("保存中...");
     try {
       var matches = ((tour && tour.ko && tour.ko.matches) || []).slice();
-      var entry = { date: (new Date()).toISOString().slice(0, 10), home: mHome, away: mAway, hs: Number(mHs), as: Number(mAs), round: 1, status: "FT", manual: true };
       var i = matches.findIndex(function (m) { return m.home === mHome && m.away === mAway; });
       var i2 = matches.findIndex(function (m) { return m.home === mAway && m.away === mHome; }); // 逆順登録があれば置換
-      if (i >= 0) { entry.date = matches[i].date || entry.date; matches[i] = entry; }
-      else if (i2 >= 0) { matches[i2] = entry; }
-      else matches.push(entry);
+      var prev = i >= 0 ? matches[i] : i2 >= 0 ? matches[i2] : null;
+      var entry = {
+        date: (prev && prev.date) || (new Date()).toISOString().slice(0, 10),
+        ts: (prev && prev.ts) || "", id: (prev && prev.id) || "", round: (prev && prev.round) || 1,
+        home: mHome, away: mAway, hs: Number(mHs), as: Number(mAs), status: "FT", manual: true,
+        cards: { hy: Number(mHy || 0), hr: Number(mHr || 0), ay: Number(mAy || 0), ar: Number(mAr || 0) },
+      };
+      if (i >= 0) matches[i] = entry; else if (i2 >= 0) matches[i2] = entry; else matches.push(entry);
       var groups = computeGroups(matches);
       var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
       await saveTournament({ phase: "groups", groups: groups, ko: newKo });
       setTour(function (t) { return Object.assign({}, t, { phase: "groups", groups: groups, ko: newKo }); });
-      setMMsg("✓ 登録: " + mHome + " " + mHs + "-" + mAs + " " + mAway);
-      setMHome(""); setMAway(""); setMHs(""); setMAs("");
+      setMMsg("✓ 登録: " + mHome + " " + mHs + "-" + mAs + " " + mAway + "（🟨" + (mHy || 0) + "/" + (mAy || 0) + " 🟥" + (mHr || 0) + "/" + (mAr || 0) + "）");
+      setMHome(""); setMAway(""); setMHs(""); setMAs(""); setMHy(""); setMHr(""); setMAy(""); setMAr("");
       setTimeout(function () { setMMsg(""); }, 2500);
     } catch (e) { setMMsg("✕ " + (e.message || e)); }
   }
@@ -1435,18 +1453,33 @@ function AdminPanel({ tour, setTour, close }) {
                 <select value={mGroup} onChange={function (e) { setMGroup(e.target.value); setMHome(""); setMAway(""); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
                   {Object.keys(GRP).map(function (g) { return <option key={g} value={g}>グループ{g}</option>; })}
                 </select>
-                <select value={mHome} onChange={function (e) { setMHome(e.target.value); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
+                <select value={mHome} onChange={function (e) { setMHome(e.target.value); loadExisting(e.target.value, mAway); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
                   <option value="">ホーム</option>
                   {GRP[mGroup].map(function (t) { return <option key={t.n} value={t.n}>{t.n}</option>; })}
                 </select>
                 <input type="number" value={mHs} onChange={function (e) { setMHs(e.target.value); }} placeholder="0" style={{ width: 44, padding: "6px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, textAlign: "center" }} />
                 <span style={{ color: $.dim }}>-</span>
                 <input type="number" value={mAs} onChange={function (e) { setMAs(e.target.value); }} placeholder="0" style={{ width: 44, padding: "6px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, textAlign: "center" }} />
-                <select value={mAway} onChange={function (e) { setMAway(e.target.value); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
+                <select value={mAway} onChange={function (e) { setMAway(e.target.value); loadExisting(mHome, e.target.value); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
                   <option value="">アウェイ</option>
                   {GRP[mGroup].map(function (t) { return <option key={t.n} value={t.n}>{t.n}</option>; })}
                 </select>
                 <button onClick={saveMatch} style={{ padding: "6px 16px", border: "none", borderRadius: 6, background: $.pitchL, color: "#000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>登録</button>
+              </div>
+              {/* フェアプレー（カード枚数）— APIが取りこぼすので手動で補正できる */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 8 }}>
+                <span style={{ fontSize: 10, color: $.dim, fontWeight: 700 }}>カード（任意）</span>
+                <span style={{ fontSize: 11, color: $.txt }}>{mHome || "ホーム"}</span>
+                <span style={{ fontSize: 11 }}>🟨</span>
+                <input type="number" min="0" value={mHy} onChange={function (e) { setMHy(e.target.value); }} placeholder="0" style={{ width: 38, padding: "5px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12, textAlign: "center" }} />
+                <span style={{ fontSize: 11 }}>🟥</span>
+                <input type="number" min="0" value={mHr} onChange={function (e) { setMHr(e.target.value); }} placeholder="0" style={{ width: 38, padding: "5px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12, textAlign: "center" }} />
+                <span style={{ fontSize: 11, color: $.txt, marginLeft: 8 }}>{mAway || "アウェイ"}</span>
+                <span style={{ fontSize: 11 }}>🟨</span>
+                <input type="number" min="0" value={mAy} onChange={function (e) { setMAy(e.target.value); }} placeholder="0" style={{ width: 38, padding: "5px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12, textAlign: "center" }} />
+                <span style={{ fontSize: 11 }}>🟥</span>
+                <input type="number" min="0" value={mAr} onChange={function (e) { setMAr(e.target.value); }} placeholder="0" style={{ width: 38, padding: "5px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12, textAlign: "center" }} />
+                <span style={{ fontSize: 9, color: $.dim }}>※チームを選ぶと既存値を表示。空欄なら0で上書き</span>
               </div>
               {mMsg && <div style={{ fontSize: 11, marginTop: 6, color: mMsg.startsWith("✓") ? $.pitchL : mMsg.startsWith("✕") ? $.redL : $.dim }}>{mMsg}</div>}
             </div>
@@ -2107,8 +2140,10 @@ function MM({ m, ctx }) {
       <div style={{ borderRadius: 6, overflow: "hidden", border: "1px solid " + $.border, background: $.card }}>
         {[0, 1].map(function (idx) {
           var sd = m.seeds[idx];
-          if (ctx.readOnly && sd && sd.startsWith("3(")) return third3Slot(sd, idx);
-          return <TR key={idx} t={m.teams[idx]} stage="r32" ctx={ctx} seed={sd} />;
+          var tm = m.teams[idx];
+          // 3位枠: 割当が確定（チーム解決済み）なら実チーム表示。未確定のみ候補(or)表示
+          if (ctx.readOnly && sd && sd.startsWith("3(") && (!tm || tm.tbd || !tm.n)) return third3Slot(sd, idx);
+          return <TR key={idx} t={tm} stage="r32" ctx={ctx} seed={sd} />;
         })}
       </div>
       {has3 && !ctx.readOnly && (
