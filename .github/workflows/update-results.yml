@@ -49,11 +49,14 @@ jobs:
             let prev = [];
             try { const d = await J(`${URL}/rest/v1/tournament?id=eq.wc2026&select=ko`, {headers:{apikey:KEY,Authorization:'Bearer '+KEY}}); prev = (d[0] && d[0].ko && d[0].ko.matches) || []; } catch (e) {}
 
-            // 複数エンドポイントから収集（無料tierの断片化対策）
-            const eps = [`/eventsseason.php?id=${L}&s=${S}`, `/eventspastleague.php?id=${L}`, `/eventsnextleague.php?id=${L}`];
+            // 複数エンドポイントから収集（無料tierの断片化対策）。
+            // round/season系は1回5件しか返さないため、グループ戦は日付別(eventsday 6/11〜6/27)で全日程を取得。
+            const eps = [];
+            for (let dd = 11; dd <= 27; dd++) eps.push(`/eventsday.php?d=2026-06-${dd}&l=${L}`);
+            eps.push(`/eventsseason.php?id=${L}&s=${S}`, `/eventspastleague.php?id=${L}`, `/eventsnextleague.php?id=${L}`);
             for (let r = 1; r <= 8; r++) eps.push(`/eventsround.php?id=${L}&r=${r}&s=${S}`);
             let raw = [];
-            for (const ep of eps) { const d = await J('https://www.thesportsdb.com/api/v1/json/3' + ep); (d.events || []).forEach(e => raw.push(e)); await sleep(1000); }
+            for (const ep of eps) { const d = await J('https://www.thesportsdb.com/api/v1/json/3' + ep); (d.events || d.results || []).forEach(e => raw.push(e)); await sleep(1000); }
 
             // マージ。key=ステージ(G/K{round})×チーム組(順不同)。home/away逆順やid有無の差でも同一カードを1件に畳む。
             // スコア有を優先・手動修正(manual)を最優先で保護・既存prevを保持して結果を失わない。

@@ -77,6 +77,10 @@ var TEAM_GRP = {}; Object.keys(GRP).forEach(function(g){ GRP[g].forEach(function
 // TheSportsDB(英語)→日本語チーム名。管理画面の手動API連携で使用（ワークフローと同一）。
 var NM = {"Mexico":"メキシコ","South Africa":"南アフリカ","South Korea":"韓国","Korea Republic":"韓国","Czech Republic":"チェコ","Czechia":"チェコ","Canada":"カナダ","Bosnia and Herzegovina":"ボスニア","Bosnia-Herzegovina":"ボスニア","Qatar":"カタール","Switzerland":"スイス","Brazil":"ブラジル","Morocco":"モロッコ","Haiti":"ハイチ","Scotland":"スコットランド","United States":"アメリカ","USA":"アメリカ","Paraguay":"パラグアイ","Australia":"オーストラリア","Turkey":"トルコ","Turkiye":"トルコ","Germany":"ドイツ","Curacao":"キュラソー","Curaçao":"キュラソー","Ivory Coast":"コートジボワール","Ecuador":"エクアドル","Netherlands":"オランダ","Japan":"日本","Sweden":"スウェーデン","Tunisia":"チュニジア","Belgium":"ベルギー","Egypt":"エジプト","Iran":"イラン","New Zealand":"ニュージーランド","Spain":"スペイン","Cape Verde":"カーボベルデ","Saudi Arabia":"サウジアラビア","Uruguay":"ウルグアイ","France":"フランス","Senegal":"セネガル","Iraq":"イラク","Norway":"ノルウェー","Argentina":"アルゼンチン","Algeria":"アルジェリア","Austria":"オーストリア","Jordan":"ヨルダン","Portugal":"ポルトガル","DR Congo":"DRコンゴ","Congo DR":"DRコンゴ","Uzbekistan":"ウズベキスタン","Colombia":"コロンビア","England":"イングランド","Croatia":"クロアチア","Ghana":"ガーナ","Panama":"パナマ"};
 function jaTeam(n) { return NM[n] || n; }
+// 公式日程フォールバック（無料APIが未配信のグループ戦カードの開催日, 会場現地日付/Wikipedia由来）。
+// 実データ(API/手動)に日程が入ればそちらを優先表示。キー=チーム名の組(順不同)。
+var SCHED={"DRコンゴ|ウズベキスタン":"2026-06-27","DRコンゴ|コロンビア":"2026-06-23","DRコンゴ|ポルトガル":"2026-06-17","アルジェリア|アルゼンチン":"2026-06-16","アルジェリア|オーストリア":"2026-06-27","アルジェリア|ヨルダン":"2026-06-22","アルゼンチン|オーストリア":"2026-06-22","アルゼンチン|ヨルダン":"2026-06-27","イラク|セネガル":"2026-06-26","イラク|ノルウェー":"2026-06-16","イラク|フランス":"2026-06-22","イングランド|ガーナ":"2026-06-23","イングランド|クロアチア":"2026-06-17","イングランド|パナマ":"2026-06-27","ウズベキスタン|コロンビア":"2026-06-17","ウズベキスタン|ポルトガル":"2026-06-23","ウルグアイ|カーボベルデ":"2026-06-21","ウルグアイ|サウジアラビア":"2026-06-15","ウルグアイ|スペイン":"2026-06-26","オランダ|スウェーデン":"2026-06-20","オランダ|チュニジア":"2026-06-25","オランダ|日本":"2026-06-14","オーストリア|ヨルダン":"2026-06-16","カーボベルデ|サウジアラビア":"2026-06-26","カーボベルデ|スペイン":"2026-06-15","ガーナ|クロアチア":"2026-06-27","ガーナ|パナマ":"2026-06-17","クロアチア|パナマ":"2026-06-23","コロンビア|ポルトガル":"2026-06-27","サウジアラビア|スペイン":"2026-06-21","スウェーデン|チュニジア":"2026-06-14","スウェーデン|日本":"2026-06-25","セネガル|ノルウェー":"2026-06-22","セネガル|フランス":"2026-06-16","チェコ|メキシコ":"2026-06-25","チュニジア|日本":"2026-06-20","ノルウェー|フランス":"2026-06-26"};
+function schedDate(a, b) { return SCHED[[a, b].slice().sort().join("|")] || ""; }
 // FIFA男子世界ランキング（2026年4月1日付 / J SPORTS）。ノルウェーは概算。
 var FIFA_RANK = {"フランス":1,"スペイン":2,"アルゼンチン":3,"イングランド":4,"ポルトガル":5,"ブラジル":6,"オランダ":7,"モロッコ":8,"ベルギー":9,"ドイツ":10,"クロアチア":11,"コロンビア":13,"セネガル":14,"メキシコ":15,"アメリカ":16,"ウルグアイ":17,"日本":18,"スイス":19,"イラン":21,"トルコ":22,"エクアドル":23,"オーストリア":24,"韓国":25,"オーストラリア":27,"アルジェリア":28,"エジプト":29,"カナダ":30,"ノルウェー":32,"パナマ":33,"コートジボワール":34,"スウェーデン":38,"パラグアイ":40,"チェコ":41,"スコットランド":43,"チュニジア":44,"DRコンゴ":46,"ウズベキスタン":50,"カタール":55,"イラク":57,"南アフリカ":60,"サウジアラビア":61,"ヨルダン":63,"ボスニア":65,"カーボベルデ":69,"ガーナ":74,"キュラソー":82,"ハイチ":83,"ニュージーランド":85};
 var bsc = function(o){ return Math.round(Math.pow(o,.4)*10)/10; };
@@ -1434,11 +1438,18 @@ function AdminPanel({ tour, setTour, close }) {
     setSyncing(true); setSyncMsg("📡 最新データを取得中...");
     try {
       var L = 4429, S = 2026, base = "https://www.thesportsdb.com/api/v1/json/3";
-      var eps = ["/eventsseason.php?id=" + L + "&s=" + S, "/eventspastleague.php?id=" + L, "/eventsnextleague.php?id=" + L];
-      for (var rr = 1; rr <= 8; rr++) eps.push("/eventsround.php?id=" + L + "&r=" + rr + "&s=" + S);
+      // 無料APIはround/season系が1回5件しか返さないため、グループ戦は日付別(eventsday)で全日程を取得。
+      // KO・取りこぼし補完にラウンド/シーズン系も併用。
+      var eps = [];
+      for (var dd = 11; dd <= 27; dd++) eps.push("/eventsday.php?d=2026-06-" + dd + "&l=" + L); // グループ戦 6/11〜6/27
+      eps.push("/eventsseason.php?id=" + L + "&s=" + S, "/eventspastleague.php?id=" + L, "/eventsnextleague.php?id=" + L);
+      for (var rr = 4; rr <= 8; rr++) eps.push("/eventsround.php?id=" + L + "&r=" + rr + "&s=" + S); // KOラウンド
       var raw = [];
+      var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
       for (var ei = 0; ei < eps.length; ei++) {
-        try { var res = await fetch(base + eps[ei]); var d = await res.json(); (d.events || []).forEach(function (e) { raw.push(e); }); } catch (e) { /* skip */ }
+        try { var res = await fetch(base + eps[ei]); var d = await res.json(); (d.events || d.results || []).forEach(function (e) { raw.push(e); }); } catch (e) { /* skip */ }
+        if (ei % 3 === 0) setSyncMsg("📡 取得中... (" + (ei + 1) + "/" + eps.length + ")");
+        await sleep(280);
       }
       if (!raw.length) { setSyncMsg("✕ APIからデータを取得できませんでした（時間をおいて再試行）"); setSyncing(false); return; }
       // 現データから開始（累積）。キーはid優先・無ければチーム組。
@@ -2049,7 +2060,8 @@ function LiveTab({ tour, liveStarted }) {
               for (var pi = 0; pi < gteams.length; pi++) for (var pj = pi + 1; pj < gteams.length; pj++) pairs.push([gteams[pi], gteams[pj]]);
               var gms = pairs.map(function (pr) {
                 var mm = wcMatches.find(function (m) { return (m.home === pr[0] && m.away === pr[1]) || (m.home === pr[1] && m.away === pr[0]); });
-                return mm || { home: pr[0], away: pr[1], hs: null, as: null, ts: "", date: "" };
+                // ライブ日程が無いカードは公式日程(SCHED)で開催日を補完（「未定」を解消）
+                return mm || { home: pr[0], away: pr[1], hs: null, as: null, ts: "", date: schedDate(pr[0], pr[1]) };
               });
               gms.sort(function (a, b) { var ad = a.date || a.ts || "", bd = b.date || b.ts || ""; if (ad && bd) return ad.localeCompare(bd); if (ad) return -1; if (bd) return 1; return 0; });
               return (
@@ -2098,7 +2110,7 @@ function LiveTab({ tour, liveStarted }) {
                         var jp = !done ? jstParts(m.ts) : null;
                         return (
                           <div key={mi} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, padding: "2px 0", color: $.txt2 }}>
-                            <span style={{ width: 40, color: $.dim, flexShrink: 0, fontSize: 9 }}>{jp ? jp.date + " " + jp.time : (done && m.date ? (m.date || "").slice(5) : "未定")}</span>
+                            <span style={{ width: 40, color: $.dim, flexShrink: 0, fontSize: 9 }}>{jp ? jp.date + " " + jp.time : (m.date ? (m.date || "").slice(5) : "未定")}</span>
                             <span style={{ flex: 1, textAlign: "right", fontWeight: hw ? 700 : 400, color: hw ? $.txt : $.txt2, whiteSpace: "nowrap", overflow: "hidden" }}>{m.home}</span>
                             <span style={{ fontFamily: fontH, color: done ? $.gold : $.dim, minWidth: 28, textAlign: "center", fontSize: done ? 12 : 9 }}>{done ? m.hs + "-" + m.as : "vs"}</span>
                             <span style={{ flex: 1, textAlign: "left", fontWeight: aw ? 700 : 400, color: aw ? $.txt : $.txt2, whiteSpace: "nowrap", overflow: "hidden" }}>{m.away}</span>
