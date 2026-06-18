@@ -440,7 +440,7 @@ export default function App() {
       <div style={{ fontFamily: font, background: $.bg, color: $.txt, minHeight: "100vh", paddingBottom: 100 }}>
         <div style={{ position: "fixed", inset: 0, opacity: 0.04, backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
         <Header tab={tab} setTab={setTab} nm={nm} score={score} logout={logout} tour={tour} openAdmin={function () { setAdminOpen(true); }} openRules={function () { setRulesOpen(true); }} />
-        <main className="main-pad" style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 16px" }}>
+        <main className="main-pad" style={{ maxWidth: 1440, margin: "0 auto", padding: "20px 16px" }}>
           {tab === "vote" && (
             <VoteTab
               gl={gl} des={des} ko={ko} tp={tp} ag={ag} setAg={setAg}
@@ -485,7 +485,7 @@ function Gate({ nm, setNm, enter, loading, err }) {
         <div className="fade-in" style={{ width: "100%", maxWidth: 460, position: "relative", zIndex: 2 }}>
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 76, height: 76, borderRadius: 16, background: "linear-gradient(135deg," + $.gold + "," + $.goldD + ")", boxShadow: $.glow, fontSize: 38, marginBottom: 14, animation: "pulse 3s ease-in-out infinite" }}>⚽</div>
-            <div style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 3, color: $.gold, marginBottom: 4 }}>Road to 三幸園</div>
+            <div style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 3, color: $.gold, marginBottom: 4 }}>ROAD to 三幸園　2026.07.21</div>
             <div style={{ fontFamily: fontH, fontSize: 30, letterSpacing: 3 }}>FIFA WORLD CUP 2026</div>
           </div>
           <div style={{ background: "linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02))", border: "1px solid " + $.border, borderRadius: 16, padding: 28, backdropFilter: "blur(8px)", boxShadow: "0 20px 60px rgba(0,0,0,.4)" }}>
@@ -565,11 +565,11 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin, openRules }) 
   var phaseLabel = PHASE_LABEL[phase] || phase;
   return (
     <header style={{ background: "linear-gradient(180deg,rgba(5,7,13,.95),rgba(5,7,13,.78))", borderBottom: "1px solid " + $.border, padding: "0 20px", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(10px)" }}>
-      <div className="h-bar" style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
+      <div className="h-bar" style={{ maxWidth: 1440, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", height: 64 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
           <div className="h-logo-mark" style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg," + $.gold + "," + $.goldD + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, boxShadow: $.glow, flexShrink: 0 }}>⚽</div>
           <div style={{ minWidth: 0 }}>
-            <div className="h-logo-sub" style={{ fontFamily: fontH, fontSize: 11, letterSpacing: 2, color: $.gold }}>Road to 三幸園</div>
+            <div className="h-logo-sub" style={{ fontFamily: fontH, fontSize: 11, letterSpacing: 2, color: $.gold }}>ROAD to 三幸園　2026.07.21</div>
             <div className="h-logo-main" style={{ fontFamily: fontH, fontSize: 20, letterSpacing: 2 }}>FIFA WORLD CUP 2026</div>
           </div>
         </div>
@@ -589,7 +589,7 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin, openRules }) 
           <button onClick={openAdmin} title="管理者" className="h-admin-btn" style={{ background: "transparent", border: "1px solid " + $.border, color: $.dim, fontSize: 14, padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>⚙️</button>
         </div>
       </div>
-      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+      <div style={{ maxWidth: 1440, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div className="h-tab-row" style={{ display: "flex" }}>
         {[{ id: "results", l: "📊 ランキング" }, { id: "live", l: "⚽ 途中経過" }].map(function (t) {
           var act = tab === t.id;
@@ -888,7 +888,7 @@ function SaveBar({ saveStatus, savedAt, saveNow, glComplete, score }) {
   else if (saveStatus === "error") { label = "⚠ エラー（もう一度押す）"; bg = "linear-gradient(135deg," + $.red + "," + $.redL + ")"; fg = "#fff"; }
   return (
     <div className="save-bar" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "linear-gradient(180deg,rgba(5,7,13,.0),rgba(5,7,13,.92) 30%)", padding: "20px 16px", zIndex: 90, pointerEvents: "none" }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, pointerEvents: "auto" }}>
+      <div style={{ maxWidth: 1440, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, pointerEvents: "auto" }}>
         <div className="save-bar-info" style={{ fontSize: 11, color: $.dim, letterSpacing: 1, minWidth: 0 }}>
           {savedAt ? <span>✓ 最終投票: {savedAt.toLocaleTimeString("ja-JP")}</span> : <span>{glComplete ? "予想完了！投票できます" : "12グループすべて設定すると投票できます"}</span>}
           {score && <span className="save-bar-info-score" style={{ marginLeft: 12, color: $.gold, fontFamily: fontH, letterSpacing: 2 }}>得点 {score.total.toFixed(1)}</span>}
@@ -1040,7 +1040,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
               <div
                 onClick={function () { setOpen(isOpen ? null : r.name); }}
                 className="lb-row"
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", cursor: "pointer", flexWrap: "wrap" }}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", cursor: "pointer", flexWrap: "wrap" }}
               >
                 <div className="lb-rank" style={{ fontFamily: fontH, fontSize: 20, color: i === 0 ? $.gold : i === 1 ? "#bbb" : i === 2 ? "#cd7f32" : $.dim, width: 36, textAlign: "center", flexShrink: 0 }}>
                   {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "#" + (i + 1)}
@@ -1054,11 +1054,11 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
                   {(["A", "B", "C"]).map(function (k) {
                     var n = r.des && r.des[k];
                     var cfg = DES[k];
-                    if (!n) return <span key={k} className="bonus-chip" style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l}—</span>;
+                    if (!n) return <span key={k} className="bonus-chip" style={{ fontSize: 10, padding: "2px 6px", borderRadius: 5, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l[0]}推—</span>;
                     return (
-                      <span key={k} className="bonus-chip" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, padding: "3px 8px", borderRadius: 5, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700 }}>
-                        <span style={{ fontSize: 9, opacity: .8 }}>{cfg.l}</span>
-                        <Fl n={n} s={12} />{n}
+                      <span key={k} className="bonus-chip" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, padding: "2px 7px", borderRadius: 5, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700, whiteSpace: "nowrap" }}>
+                        <span style={{ fontSize: 9, opacity: .8 }}>{cfg.l[0]}推</span>
+                        <Fl n={n} s={11} />{n}
                       </span>
                     );
                   })}
