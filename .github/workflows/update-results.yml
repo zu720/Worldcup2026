@@ -55,10 +55,11 @@ jobs:
             let raw = [];
             for (const ep of eps) { const d = await J('https://www.thesportsdb.com/api/v1/json/3' + ep); (d.events || []).forEach(e => raw.push(e)); await sleep(1000); }
 
-            // マージ（key=home|away、スコア有を優先、既存prevを保持して結果を失わない）
+            // マージ。key=ステージ(G/K{round})×チーム組(順不同)。home/away逆順やid有無の差でも同一カードを1件に畳む。
+            // スコア有を優先・手動修正(manual)を最優先で保護・既存prevを保持して結果を失わない。
             const map = {};
-            // 既存が手動修正(manual)ならAPIで上書きしない。スコア無し→有りのみ置換。id/tsは補完
-            const put = (m) => { const k = m.home+'|'+m.away; const ex = map[k]; const has = m.hs!=null&&m.as!=null; if (!ex) { map[k]=m; return; } if (ex.manual) { if (m.id&&!ex.id) ex.id=m.id; if (m.ts&&!ex.ts) ex.ts=m.ts; return; } const eh = ex.hs!=null&&ex.as!=null; if (has&&!eh) map[k]=m; else { if (m.id&&!ex.id) ex.id=m.id; if (m.ts&&!ex.ts) ex.ts=m.ts; } };
+            const mkey = (m) => ((m.round&&m.round>3)?('K'+m.round):'G')+':'+[m.home,m.away].slice().sort().join('|');
+            const put = (m) => { const k = mkey(m); const ex = map[k]; const has = m.hs!=null&&m.as!=null; if (!ex) { map[k]=m; return; } if (ex.manual && !m.manual) { if (m.id&&!ex.id) ex.id=m.id; if (m.ts&&!ex.ts) ex.ts=m.ts; return; } if (m.manual && !ex.manual) { map[k]=m; return; } const eh = ex.hs!=null&&ex.as!=null; if (has&&!eh) map[k]=m; else { if (m.id&&!ex.id) ex.id=m.id; if (m.ts&&!ex.ts) ex.ts=m.ts; } };
             prev.forEach(put);
             raw.forEach(e => { const m = {date:e.dateEvent||'',ts:e.strTimestamp||'',home:ja(e.strHomeTeam||''),away:ja(e.strAwayTeam||''),hs:(e.intHomeScore==null||e.intHomeScore==='')?null:Number(e.intHomeScore),as:(e.intAwayScore==null||e.intAwayScore==='')?null:Number(e.intAwayScore),round:Number(e.intRound||0),status:e.strStatus||'',id:e.idEvent||''}; if (m.home&&m.away) put(m); });
             const matches = Object.values(map).sort((a,b) => (a.date||'').localeCompare(b.date||''));

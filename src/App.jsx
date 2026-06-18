@@ -74,6 +74,9 @@ var GRP = {
 var AT = Object.values(GRP).flat();
 var ft = function(n){ return AT.find(function(t){ return t.n===n; }) || null; };
 var TEAM_GRP = {}; Object.keys(GRP).forEach(function(g){ GRP[g].forEach(function(t){ TEAM_GRP[t.n] = g; }); });
+// TheSportsDB(英語)→日本語チーム名。管理画面の手動API連携で使用（ワークフローと同一）。
+var NM = {"Mexico":"メキシコ","South Africa":"南アフリカ","South Korea":"韓国","Korea Republic":"韓国","Czech Republic":"チェコ","Czechia":"チェコ","Canada":"カナダ","Bosnia and Herzegovina":"ボスニア","Bosnia-Herzegovina":"ボスニア","Qatar":"カタール","Switzerland":"スイス","Brazil":"ブラジル","Morocco":"モロッコ","Haiti":"ハイチ","Scotland":"スコットランド","United States":"アメリカ","USA":"アメリカ","Paraguay":"パラグアイ","Australia":"オーストラリア","Turkey":"トルコ","Turkiye":"トルコ","Germany":"ドイツ","Curacao":"キュラソー","Curaçao":"キュラソー","Ivory Coast":"コートジボワール","Ecuador":"エクアドル","Netherlands":"オランダ","Japan":"日本","Sweden":"スウェーデン","Tunisia":"チュニジア","Belgium":"ベルギー","Egypt":"エジプト","Iran":"イラン","New Zealand":"ニュージーランド","Spain":"スペイン","Cape Verde":"カーボベルデ","Saudi Arabia":"サウジアラビア","Uruguay":"ウルグアイ","France":"フランス","Senegal":"セネガル","Iraq":"イラク","Norway":"ノルウェー","Argentina":"アルゼンチン","Algeria":"アルジェリア","Austria":"オーストリア","Jordan":"ヨルダン","Portugal":"ポルトガル","DR Congo":"DRコンゴ","Congo DR":"DRコンゴ","Uzbekistan":"ウズベキスタン","Colombia":"コロンビア","England":"イングランド","Croatia":"クロアチア","Ghana":"ガーナ","Panama":"パナマ"};
+function jaTeam(n) { return NM[n] || n; }
 // FIFA男子世界ランキング（2026年4月1日付 / J SPORTS）。ノルウェーは概算。
 var FIFA_RANK = {"フランス":1,"スペイン":2,"アルゼンチン":3,"イングランド":4,"ポルトガル":5,"ブラジル":6,"オランダ":7,"モロッコ":8,"ベルギー":9,"ドイツ":10,"クロアチア":11,"コロンビア":13,"セネガル":14,"メキシコ":15,"アメリカ":16,"ウルグアイ":17,"日本":18,"スイス":19,"イラン":21,"トルコ":22,"エクアドル":23,"オーストリア":24,"韓国":25,"オーストラリア":27,"アルジェリア":28,"エジプト":29,"カナダ":30,"ノルウェー":32,"パナマ":33,"コートジボワール":34,"スウェーデン":38,"パラグアイ":40,"チェコ":41,"スコットランド":43,"チュニジア":44,"DRコンゴ":46,"ウズベキスタン":50,"カタール":55,"イラク":57,"南アフリカ":60,"サウジアラビア":61,"ヨルダン":63,"ボスニア":65,"カーボベルデ":69,"ガーナ":74,"キュラソー":82,"ハイチ":83,"ニュージーランド":85};
 var bsc = function(o){ return Math.round(Math.pow(o,.4)*10)/10; };
@@ -152,12 +155,32 @@ function calcScore(gl, des, ko, groups) {
     return { total: Math.round(total * 100) / 100, bd: bd.sort(function (a, b) { return b.pts - a.pts; }) };
   } catch (e) { return { total: 0, bd: [] }; }
 }
+// 試合の重複排除: id優先、無ければチーム名の組(順不同)をキーに1件へ正規化。
+// 優先順位: スコア確定 > 手動(manual) > 先着。home/away逆順の重複も1試合に畳む。
+// キー: 同一ステージ(グループ=G / 各KOラウンド=K{round})× チーム名の組(順不同)。
+// idの有無やhome/away順、手動/APIの差に依存せず同一カードを1件に畳む（同組は1試合のみ前提）。
+function matchKey(m) { var bucket = (m.round && m.round > 3) ? ("K" + m.round) : "G"; return bucket + ":" + [m.home, m.away].slice().sort().join("|"); }
+function dedupeMatches(matches) {
+  var uniq = {};
+  (matches || []).forEach(function (m) {
+    if (!m || !m.home || !m.away) return;
+    var k = matchKey(m), ex = uniq[k];
+    if (!ex) { uniq[k] = m; return; }
+    var mS = m.hs != null && m.as != null, eS = ex.hs != null && ex.as != null;
+    if (mS && !eS) uniq[k] = m;                                 // スコアありを優先
+    else if (mS === eS && m.manual && !ex.manual) uniq[k] = m;  // 同条件なら手動を優先
+  });
+  return Object.keys(uniq).map(function (k) { return uniq[k]; });
+}
 // 試合リスト（round<=3 の終了試合）からグループ星取表を計算
 function computeGroups(matches) {
   var groups = {};
   Object.keys(GRP).forEach(function (g) { groups[g] = GRP[g].map(function (t) { return { n: t.n, mp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, yc: 0, rc: 0, fp: 0 }; }); });
   var find = function (g, n) { return groups[g].find(function (t) { return t.n === n; }); };
-  (matches || []).forEach(function (m) {
+  // 同一カードの二重計上を防止: id優先、無ければチーム名の組(順不同)で1件に正規化。
+  // (手動入力とAPIがhome/away逆順で重複登録されても1試合として数える)
+  var uniq = dedupeMatches(matches);
+  uniq.forEach(function (m) {
     if ((m.round && m.round > 3) || m.hs == null || m.as == null) return;
     var g = TEAM_GRP[m.home]; if (!g || TEAM_GRP[m.away] !== g) return;
     var H = find(g, m.home), A = find(g, m.away); if (!H || !A) return;
@@ -1319,6 +1342,8 @@ function AdminPanel({ tour, setTour, close }) {
   var [mHy, setMHy] = useState(""); var [mHr, setMHr] = useState(""); // ホーム 黄/赤
   var [mAy, setMAy] = useState(""); var [mAr, setMAr] = useState(""); // アウェイ 黄/赤
   var [mMsg, setMMsg] = useState("");
+  var [syncMsg, setSyncMsg] = useState("");
+  var [syncing, setSyncing] = useState(false);
   // チーム選択時に既存試合の値（スコア・カード）を読み込む
   function loadExisting(home, away) {
     var ms = (tour && tour.ko && tour.ko.matches) || [];
@@ -1384,6 +1409,67 @@ function AdminPanel({ tour, setTour, close }) {
       setMHome(""); setMAway(""); setMHs(""); setMAs(""); setMHy(""); setMHr(""); setMAy(""); setMAr("");
       setTimeout(function () { setMMsg(""); }, 2500);
     } catch (e) { setMMsg("✕ " + (e.message || e)); }
+  }
+
+  // 試合結果を反映: 現在の試合データを重複排除して星取表を再計算（手動修正後やAPI連携後の手動反映用）
+  async function reflectResults() {
+    if (syncing) return;
+    setSyncing(true); setSyncMsg("反映中...");
+    try {
+      var orig = ((tour && tour.ko && tour.ko.matches) || []);
+      var matches = dedupeMatches(orig);
+      var merged = orig.length - matches.length;
+      var groups = computeGroups(matches);
+      var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
+      await saveTournament({ phase: (tour && tour.phase) || "groups", groups: groups, ko: newKo });
+      setTour(function (t) { return Object.assign({}, t, { groups: groups, ko: newKo }); });
+      setSyncMsg("✓ 星取表を再計算しました" + (merged > 0 ? "（重複" + merged + "件を統合）" : ""));
+    } catch (e) { setSyncMsg("✕ " + (e.message || e)); }
+    setSyncing(false);
+  }
+
+  // 最新データ取得: TheSportsDB(無料)から直接取得し、現データに統合（手動修正は保護・既存カードは維持）
+  async function syncApi() {
+    if (syncing) return;
+    setSyncing(true); setSyncMsg("📡 最新データを取得中...");
+    try {
+      var L = 4429, S = 2026, base = "https://www.thesportsdb.com/api/v1/json/3";
+      var eps = ["/eventsseason.php?id=" + L + "&s=" + S, "/eventspastleague.php?id=" + L, "/eventsnextleague.php?id=" + L];
+      for (var rr = 1; rr <= 8; rr++) eps.push("/eventsround.php?id=" + L + "&r=" + rr + "&s=" + S);
+      var raw = [];
+      for (var ei = 0; ei < eps.length; ei++) {
+        try { var res = await fetch(base + eps[ei]); var d = await res.json(); (d.events || []).forEach(function (e) { raw.push(e); }); } catch (e) { /* skip */ }
+      }
+      if (!raw.length) { setSyncMsg("✕ APIからデータを取得できませんでした（時間をおいて再試行）"); setSyncing(false); return; }
+      // 現データから開始（累積）。キーはid優先・無ければチーム組。
+      var map = {};
+      dedupeMatches((tour && tour.ko && tour.ko.matches) || []).forEach(function (m) { map[matchKey(m)] = m; });
+      var addedCnt = 0, updCnt = 0;
+      var put = function (m) {
+        var k = matchKey(m), ex = map[k], hs = m.hs != null && m.as != null;
+        if (!ex) { map[k] = m; addedCnt++; return; }
+        if (ex.manual) { if (m.id && !ex.id) ex.id = m.id; if (m.ts && !ex.ts) ex.ts = m.ts; return; } // 手動修正は保護
+        var eh = ex.hs != null && ex.as != null;
+        if (hs && (!eh || ex.hs !== m.hs || ex.as !== m.as)) { if (ex.cards && !m.cards) m.cards = ex.cards; map[k] = m; updCnt++; }
+        else { if (m.id && !ex.id) ex.id = m.id; if (m.ts && !ex.ts) ex.ts = m.ts; }
+      };
+      raw.forEach(function (e) {
+        var m = {
+          date: e.dateEvent || "", ts: e.strTimestamp || "", home: jaTeam(e.strHomeTeam || ""), away: jaTeam(e.strAwayTeam || ""),
+          hs: (e.intHomeScore == null || e.intHomeScore === "") ? null : Number(e.intHomeScore),
+          as: (e.intAwayScore == null || e.intAwayScore === "") ? null : Number(e.intAwayScore),
+          round: Number(e.intRound || 0), status: e.strStatus || "", id: e.idEvent || "",
+        };
+        if (m.home && m.away) put(m);
+      });
+      var matches = Object.keys(map).map(function (k) { return map[k]; });
+      var groups = computeGroups(matches);
+      var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
+      await saveTournament({ phase: "groups", groups: groups, ko: newKo, last_api_update: (new Date()).toISOString() });
+      setTour(function (t) { return Object.assign({}, t, { phase: "groups", groups: groups, ko: newKo, last_api_update: (new Date()).toISOString() }); });
+      setSyncMsg("✓ 取得完了: " + matches.length + "試合（確定" + matches.filter(function (m) { return m.hs != null; }).length + "・新規" + addedCnt + "・更新" + updCnt + "）。カードは手動入力を維持。");
+    } catch (e) { setSyncMsg("✕ 取得失敗: " + (e.message || e)); }
+    setSyncing(false);
   }
 
   var STAGES = [
@@ -1482,6 +1568,20 @@ function AdminPanel({ tour, setTour, close }) {
                 <span style={{ fontSize: 9, color: $.dim }}>※チームを選ぶと既存値を表示。空欄なら0で上書き</span>
               </div>
               {mMsg && <div style={{ fontSize: 11, marginTop: 6, color: mMsg.startsWith("✓") ? $.pitchL : mMsg.startsWith("✕") ? $.redL : $.dim }}>{mMsg}</div>}
+            </div>
+
+            {/* データ同期 */}
+            <div style={{ marginBottom: 16, padding: 12, background: "rgba(96,165,250,.06)", borderRadius: 8, border: "1px solid " + $.blue + "40" }}>
+              <div style={{ fontSize: 12, color: $.blueL || $.blue, fontWeight: 700, marginBottom: 4 }}>🔄 データ同期</div>
+              <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>結果がおかしい時の手動操作。手動入力した結果・カードは常に保護されます。</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                <button onClick={syncApi} disabled={syncing} style={{ padding: "7px 14px", border: "none", borderRadius: 6, background: syncing ? $.dim : $.blue, color: "#fff", fontWeight: 700, cursor: syncing ? "wait" : "pointer", fontSize: 12 }}>📡 最新データを取得</button>
+                <button onClick={reflectResults} disabled={syncing} style={{ padding: "7px 14px", border: "1px solid " + $.pitchL + "80", borderRadius: 6, background: "transparent", color: $.pitchL, fontWeight: 700, cursor: syncing ? "wait" : "pointer", fontSize: 12 }}>♻️ 試合結果を反映（再計算）</button>
+              </div>
+              <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>
+                <strong>最新データを取得</strong>＝APIに見に行き結果・日程を取り込み。<strong>反映（再計算）</strong>＝今ある試合データから星取表を作り直し（重複も自動統合）。
+              </div>
+              {syncMsg && <div style={{ fontSize: 11, marginTop: 6, color: syncMsg.startsWith("✓") ? $.pitchL : syncMsg.startsWith("✕") ? $.redL : $.dim }}>{syncMsg}</div>}
             </div>
 
             {/* KO stages */}
