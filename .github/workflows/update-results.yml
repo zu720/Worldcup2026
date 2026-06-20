@@ -45,9 +45,10 @@ jobs:
           async function main() {
             if (!URL || !KEY) { console.log('Secrets未設定, skip'); return; }
 
-            // 既存の試合（累積のベース）
+            // 既存の試合（累積のベース）＋ チーム別カード手動上書き(teamCards)
             let prev = [];
-            try { const d = await J(`${URL}/rest/v1/tournament?id=eq.wc2026&select=ko`, {headers:{apikey:KEY,Authorization:'Bearer '+KEY}}); prev = (d[0] && d[0].ko && d[0].ko.matches) || []; } catch (e) {}
+            let teamCards = {};
+            try { const d = await J(`${URL}/rest/v1/tournament?id=eq.wc2026&select=ko`, {headers:{apikey:KEY,Authorization:'Bearer '+KEY}}); prev = (d[0] && d[0].ko && d[0].ko.matches) || []; teamCards = (d[0] && d[0].ko && d[0].ko.teamCards) || {}; } catch (e) {}
 
             // 複数エンドポイントから収集（無料tierの断片化対策）。
             // round/season系は1回5件しか返さないため、グループ戦は日付別(eventsday 6/11〜6/27)で全日程を取得。
@@ -81,12 +82,14 @@ jobs:
               await sleep(500);
             }
             matches.forEach(m => { if((m.round&&m.round>3)||m.hs==null||m.as==null||!m.cards) return; const g=TG[m.home]; if(!g||TG[m.away]!==g) return; const H=find(g,m.home),A=find(g,m.away); if(!H||!A) return; H.yc+=m.cards.hy||0;H.rc+=m.cards.hr||0;A.yc+=m.cards.ay||0;A.rc+=m.cards.ar||0; });
+            // チーム別カードの手動上書き（管理画面で編集した累計枚数）をAPI集計より優先
+            Object.keys(groups).forEach(g => groups[g].forEach(t => { const o = teamCards[t.n]; if (o) { t.yc = Number(o.yc)||0; t.rc = Number(o.rc)||0; } }));
             Object.keys(groups).forEach(g => groups[g].forEach(t => { t.fp = -(t.yc*1 + t.rc*4); }));
             Object.keys(groups).forEach(g => groups[g].sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf||b.fp-a.fp||(FIFA_RANK[a.n]||999)-(FIFA_RANK[b.n]||999)));
             const played = matches.some(m => (!m.round||m.round<=3) && m.hs!=null);
 
             // ノックアウト（round>=4 の終了試合の勝者）ベストエフォート
-            const ko = {r32:[],r16:[],qf:[],sf:[],final:[],champ:null,third:null,matches};
+            const ko = {r32:[],r16:[],qf:[],sf:[],final:[],champ:null,third:null,matches,teamCards};
             const STG = {4:'r32',5:'r16',6:'qf',7:'sf',8:'final'};
             matches.forEach(m => { if (!m.round||m.round<4||m.hs==null||m.as==null) return; const st=STG[m.round]; if (!st) return; const w=m.hs>m.as?m.home:m.as>m.hs?m.away:null; if (!w) return; if (st==='final'){ if(!ko.final.includes(m.home))ko.final.push(m.home); if(!ko.final.includes(m.away))ko.final.push(m.away); ko.champ=w; } else if (!ko[st].includes(w)) ko[st].push(w); });
             let phase = 'pre';

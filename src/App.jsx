@@ -177,7 +177,7 @@ function dedupeMatches(matches) {
   return Object.keys(uniq).map(function (k) { return uniq[k]; });
 }
 // 試合リスト（round<=3 の終了試合）からグループ星取表を計算
-function computeGroups(matches) {
+function computeGroups(matches, teamCards) {
   var groups = {};
   Object.keys(GRP).forEach(function (g) { groups[g] = GRP[g].map(function (t) { return { n: t.n, mp: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, yc: 0, rc: 0, fp: 0 }; }); });
   var find = function (g, n) { return groups[g].find(function (t) { return t.n === n; }); };
@@ -193,12 +193,16 @@ function computeGroups(matches) {
     // フェアプレー: 試合に紐づくカード数を集計（手動再計算でも消えない）
     if (m.cards) { H.yc += m.cards.hy || 0; H.rc += m.cards.hr || 0; A.yc += m.cards.ay || 0; A.rc += m.cards.ar || 0; }
   });
+  // チーム別カードの手動上書き（管理画面で累計枚数を直接編集）。APIより優先。
+  if (teamCards) Object.keys(groups).forEach(function (g) { groups[g].forEach(function (t) { var o = teamCards[t.n]; if (o) { t.yc = Number(o.yc) || 0; t.rc = Number(o.rc) || 0; } }); });
   Object.keys(groups).forEach(function (g) { groups[g].forEach(function (t) { t.fp = -(t.yc + t.rc * 4); }); });
   Object.keys(groups).forEach(function (g) { groups[g].sort(function (a, b) { return b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf || b.fp - a.fp || (FIFA_RANK[a.n] || 999) - (FIFA_RANK[b.n] || 999); }); });
   return groups;
 }
 
 // 暫定ノックアウト: 実際の勝ち上がりが無ければ、試合消化済みグループの上位2を暫定R32とみなす
+// koのブラケット配列を浅いコピー（シミュレーション初期化用）
+function koCopy(k) { k = k || {}; return { r32: (k.r32 || []).slice(), r16: (k.r16 || []).slice(), qf: (k.qf || []).slice(), sf: (k.sf || []).slice(), final: (k.final || []).slice(), champ: k.champ || null, third: k.third || null }; }
 function provisionalKo(tour) {
   var ko = (tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
   var hasKO = (ko.r32 && ko.r32.length) || (ko.r16 && ko.r16.length) || (ko.qf && ko.qf.length) || (ko.sf && ko.sf.length) || (ko.final && ko.final.length) || ko.champ || ko.third;
@@ -331,9 +335,7 @@ export default function App() {
     return (k.r32 && k.r32.length) || (k.r16 && k.r16.length) || (k.qf && k.qf.length) || (k.sf && k.sf.length) || (k.final && k.final.length) || k.champ || k.third;
   }, [tour]);
   // 暫定順位込みのko（グループ戦中も暫定ポイントを反映）
-  var scoreKo = useMemo(function () { return provisionalKo(tour); }, [tour]);
   var scoreGroups = (tour && tour.groups) || {};
-  var score = useMemo(function () { try { return glComplete ? calcScore(gl, des, scoreKo, scoreGroups) : null; } catch (e) { return null; } }, [gl, des, scoreKo, scoreGroups, glComplete]);
 
   var setDes = useCallback(function (tier, tn) {
     setDesS(function (p) { var n = { A: p.A, B: p.B, C: p.C }; if (n.A === tn) n.A = null; if (n.B === tn) n.B = null; if (n.C === tn) n.C = null; n[tier] = p[tier] === tn ? null : tn; return n; });
@@ -346,6 +348,22 @@ export default function App() {
   }, []);
   var adv = useCallback(function (stage, tn) { if (!tn) return; setKo(function (prev) { try { var n = { r32: prev.r32.slice(), r16: prev.r16.slice(), qf: prev.qf.slice(), sf: prev.sf.slice(), final: prev.final.slice(), champ: prev.champ, third: prev.third }; if (stage === "champ" || stage === "third") { n[stage] = n[stage] === tn ? null : tn; return n; } var idx = n[stage].indexOf(tn); if (idx >= 0) { n[stage] = n[stage].filter(function (t) { return t !== tn; }); ["r32", "r16", "qf", "sf", "final"].forEach(function (s, si, arr) { if (si > arr.indexOf(stage)) n[s] = n[s].filter(function (t) { return t !== tn; }); }); if (n.champ === tn) n.champ = null; if (n.third === tn) n.third = null; } else { n[stage] = n[stage].concat(tn); } return n; } catch (e) { return prev; } }); }, []);
   var applyRandom = function (mode) { var r = generateRandom(mode); setGl(r.gl); setDesS(r.des); setKo({ r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null }); setTp({}); };
+
+  // ── 決勝トーナメント・シミュレーション（端末ローカル。国名クリックで勝ち上がり、ランキングに反映） ──
+  var [simKo, setSimKo] = useState({ r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null });
+  var [simTouched, setSimTouched] = useState(false);
+  // 未操作なら実結果(tour.ko)で初期化／追従。操作開始後はユーザーの手で固定。
+  useEffect(function () { if (!simTouched) setSimKo(koCopy(tour && tour.ko)); }, [tour, simTouched]);
+  var simAdv = useCallback(function (stage, tn) { if (!tn) return; setSimTouched(true); setSimKo(function (prev) { try { var n = { r32: prev.r32.slice(), r16: prev.r16.slice(), qf: prev.qf.slice(), sf: prev.sf.slice(), final: prev.final.slice(), champ: prev.champ, third: prev.third }; if (stage === "champ" || stage === "third") { n[stage] = n[stage] === tn ? null : tn; return n; } var idx = n[stage].indexOf(tn); if (idx >= 0) { n[stage] = n[stage].filter(function (t) { return t !== tn; }); ["r32", "r16", "qf", "sf", "final"].forEach(function (s, si, arr) { if (si > arr.indexOf(stage)) n[s] = n[s].filter(function (t) { return t !== tn; }); }); if (n.champ === tn) n.champ = null; if (n.third === tn) n.third = null; } else { n[stage] = n[stage].concat(tn); } return n; } catch (e) { return prev; } }); }, []);
+  var resetSim = useCallback(function () { setSimKo(koCopy(tour && tour.ko)); setSimTouched(false); }, [tour]);
+  // シミュレーション結果をスコア用ko(到達ステージ意味)へ変換。ブラケットのko[stage]=「そのラウンドの勝者」なので1段ずらす。
+  var simScoringKo = useMemo(function () {
+    var groups = (tour && tour.groups) || {}, part = [];
+    Object.keys(groups).forEach(function (g) { var arr = groups[g] || []; if (arr.some(function (t) { return (t.mp || 0) > 0; })) arr.slice(0, 2).forEach(function (t) { if (t && t.n) part.push(t.n); }); });
+    return { r32: part, r16: simKo.r32 || [], qf: simKo.r16 || [], sf: simKo.qf || [], final: simKo.sf || [], champ: simKo.champ || null, third: simKo.third || null };
+  }, [tour, simKo]);
+  // 自分のスコア（ヘッダー表示）もシミュレーションを反映（ランキングと整合）
+  var score = useMemo(function () { try { return glComplete ? calcScore(gl, des, simScoringKo, scoreGroups) : null; } catch (e) { return null; } }, [gl, des, simScoringKo, scoreGroups, glComplete]);
 
   var leftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s2) { return resolveSeed(s2, gl, tp); }) }; }); } catch (e) { return []; } }, [gl, tp]);
   var rightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s2) { return resolveSeed(s2, gl, tp); }) }; }); } catch (e) { return []; } }, [gl, tp]);
@@ -477,8 +495,8 @@ export default function App() {
               adv={adv} ctx={ctx} score={score} tour={tour} liveStarted={liveStarted} fxByTeam={fxByTeam}
             />
           )}
-          {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} />}
-          {tab === "live" && <LiveTab tour={tour} liveStarted={liveStarted} />}
+          {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} scoringKo={simScoringKo} simActive={simTouched} />}
+          {tab === "live" && <LiveTab tour={tour} liveStarted={liveStarted} simKo={simKo} simAdv={simAdv} resetSim={resetSim} simActive={simTouched} />}
           {adminOpen && <AdminPanel tour={tour} setTour={setTour} close={function () { setAdminOpen(false); }} />}
           {rulesOpen && (
             <div onClick={function () { setRulesOpen(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 20, overflowY: "auto", backdropFilter: "blur(4px)" }}>
@@ -936,7 +954,7 @@ function SaveBar({ saveStatus, savedAt, saveNow, glComplete, score }) {
 // ═══════════════════════════════════════════════════════════
 // Results Tab
 // ═══════════════════════════════════════════════════════════
-function ResultsTab({ myName: myName_, tour, liveStarted }) {
+function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive }) {
   var [list, setList] = useState([]);
   var [loading, setLoading] = useState(true);
   var [err, setErr] = useState("");
@@ -956,7 +974,8 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
     return function () { live = false; if (unsub) unsub(); };
   }, []);
 
-  var koForScore = provisionalKo(tour); // 暫定順位込み
+  // 通常は暫定順位、シミュレーション操作中はその結果でスコア計算（端末ローカル）
+  var koForScore = scoringKo || provisionalKo(tour);
   var groupsForScore = (tour && tour.groups) || {};
 
   var rows = useMemo(function () {
@@ -1026,6 +1045,12 @@ function ResultsTab({ myName: myName_, tour, liveStarted }) {
   return (
     <div className="fade-in">
       <Sec icon="🏅" title={view === "rank" ? "ランキング" : "投票一覧"} sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）")} />
+
+      {simActive && (
+        <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "rgba(168,85,247,.12)", border: "1px solid " + $.purple + "55", color: $.purpleL, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+          🔮 トーナメントのシミュレーション結果を反映中（この端末だけの試算）。<span style={{ color: $.dim, fontWeight: 400 }}>「⚽ 途中経過」タブの🔄リセットで元に戻せます。</span>
+        </div>
+      )}
 
       {/* トグル */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
@@ -1327,6 +1352,66 @@ function VoteStats({ teamStats, list }) {
 // ═══════════════════════════════════════════════════════════
 // Admin Panel (manual result entry)
 // ═══════════════════════════════════════════════════════════
+// チーム別カード集計エディタ（フェアプレー）— チーム毎の累計枚数を直接編集
+function CardEditor({ tour, setTour }) {
+  var groups = (tour && tour.groups) || {};
+  function initial() { var m = {}; Object.keys(GRP).forEach(function (g) { GRP[g].forEach(function (t) { var row = (groups[g] || []).find(function (x) { return x.n === t.n; }); m[t.n] = { yc: String((row && row.yc) || 0), rc: String((row && row.rc) || 0) }; }); }); return m; }
+  var [edits, setEdits] = useState(initial);
+  var [grp, setGrp] = useState("A");
+  var [msg, setMsg] = useState("");
+  var [saving, setSaving] = useState(false);
+  useEffect(function () { setEdits(initial()); }, [tour && tour.groups]); // eslint-disable-line
+  function setVal(team, key, v) { setEdits(function (p) { var n = Object.assign({}, p); n[team] = Object.assign({}, n[team], {}); n[team][key] = v; return n; }); }
+  async function save() {
+    if (saving) return;
+    setSaving(true); setMsg("保存中...");
+    try {
+      // 変更したチームのみ上書きに追加（触っていないチームはAPI自動集計のまま維持）
+      var base = initial();
+      var teamCards = Object.assign({}, (tour && tour.ko && tour.ko.teamCards) || {});
+      Object.keys(edits).forEach(function (t) {
+        var e = edits[t], m = base[t] || { yc: "0", rc: "0" };
+        if (String(e.yc) !== String(m.yc) || String(e.rc) !== String(m.rc)) teamCards[t] = { yc: Number(e.yc) || 0, rc: Number(e.rc) || 0 };
+      });
+      var matches = (tour && tour.ko && tour.ko.matches) || [];
+      var groups2 = computeGroups(matches, teamCards);
+      var newKo = Object.assign({}, (tour && tour.ko) || {}, { teamCards: teamCards });
+      await saveTournament({ groups: groups2, ko: newKo });
+      setTour(function (t) { return Object.assign({}, t, { groups: groups2, ko: newKo }); });
+      setMsg("✓ カード集計を保存しました（星取表・3位順位に即反映）");
+      setTimeout(function () { setMsg(""); }, 2500);
+    } catch (e) { setMsg("✕ " + (e.message || e)); }
+    setSaving(false);
+  }
+  var inp = { width: 44, padding: "5px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, textAlign: "center" };
+  return (
+    <div style={{ marginBottom: 16, padding: 12, background: "rgba(234,179,8,.06)", borderRadius: 8, border: "1px solid " + $.gold + "40" }}>
+      <div style={{ fontSize: 12, color: $.goldL, fontWeight: 700, marginBottom: 4 }}>🟨 チーム別カード集計（フェアプレー）</div>
+      <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>チーム毎の累計カード枚数を直接編集。FP =−(🟨×1 + 🟥×4)。保存するとAPIより優先され、星取表・3位順位表に反映されます。</div>
+      <select value={grp} onChange={function (e) { setGrp(e.target.value); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
+        {Object.keys(GRP).map(function (g) { return <option key={g} value={g}>グループ{g}</option>; })}
+      </select>
+      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+        {GRP[grp].map(function (t) {
+          var e = edits[t.n] || { yc: "0", rc: "0" };
+          var fp = -((Number(e.yc) || 0) + (Number(e.rc) || 0) * 4);
+          return (
+            <div key={t.n} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, flexWrap: "wrap" }}>
+              <span style={{ width: 118, fontWeight: 700, color: $.txt, display: "inline-flex", alignItems: "center", gap: 4 }}><Fl n={t.n} s={13} />{t.n}</span>
+              <span style={{ fontSize: 13 }}>🟨</span>
+              <input type="number" min="0" value={e.yc} onChange={function (ev) { setVal(t.n, "yc", ev.target.value); }} style={inp} />
+              <span style={{ fontSize: 13 }}>🟥</span>
+              <input type="number" min="0" value={e.rc} onChange={function (ev) { setVal(t.n, "rc", ev.target.value); }} style={inp} />
+              <span style={{ color: $.dim, fontSize: 11 }}>FP <b style={{ color: fp < 0 ? $.redL : $.txt }}>{fp}</b></span>
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={save} disabled={saving} style={{ marginTop: 10, padding: "7px 16px", border: "none", borderRadius: 6, background: saving ? $.dim : $.gold, color: "#000", fontWeight: 700, cursor: saving ? "wait" : "pointer", fontSize: 12 }}>カード集計を保存</button>
+      {msg && <div style={{ fontSize: 11, marginTop: 6, color: msg.startsWith("✓") ? $.pitchL : msg.startsWith("✕") ? $.redL : $.dim }}>{msg}</div>}
+    </div>
+  );
+}
 function AdminPanel({ tour, setTour, close }) {
   var ADMIN_PW = import.meta.env.VITE_ADMIN_PASSWORD || "sankoen2026";
   var [unlocked, setUnlocked] = useState(false);
@@ -1402,15 +1487,15 @@ function AdminPanel({ tour, setTour, close }) {
         date: (prev && prev.date) || (new Date()).toISOString().slice(0, 10),
         ts: (prev && prev.ts) || "", id: (prev && prev.id) || "", round: (prev && prev.round) || 1,
         home: mHome, away: mAway, hs: Number(mHs), as: Number(mAs), status: "FT", manual: true,
-        cards: { hy: Number(mHy || 0), hr: Number(mHr || 0), ay: Number(mAy || 0), ar: Number(mAr || 0) },
       };
+      if (prev && prev.cards) entry.cards = prev.cards; // 既存カードは保持（FPは別途チーム別で管理）
       if (i >= 0) matches[i] = entry; else if (i2 >= 0) matches[i2] = entry; else matches.push(entry);
-      var groups = computeGroups(matches);
+      var groups = computeGroups(matches, (tour && tour.ko && tour.ko.teamCards));
       var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
       await saveTournament({ phase: "groups", groups: groups, ko: newKo });
       setTour(function (t) { return Object.assign({}, t, { phase: "groups", groups: groups, ko: newKo }); });
-      setMMsg("✓ 登録: " + mHome + " " + mHs + "-" + mAs + " " + mAway + "（🟨" + (mHy || 0) + "/" + (mAy || 0) + " 🟥" + (mHr || 0) + "/" + (mAr || 0) + "）");
-      setMHome(""); setMAway(""); setMHs(""); setMAs(""); setMHy(""); setMHr(""); setMAy(""); setMAr("");
+      setMMsg("✓ 登録: " + mHome + " " + mHs + "-" + mAs + " " + mAway);
+      setMHome(""); setMAway(""); setMHs(""); setMAs("");
       setTimeout(function () { setMMsg(""); }, 2500);
     } catch (e) { setMMsg("✕ " + (e.message || e)); }
   }
@@ -1423,7 +1508,7 @@ function AdminPanel({ tour, setTour, close }) {
       var orig = ((tour && tour.ko && tour.ko.matches) || []);
       var matches = dedupeMatches(orig);
       var merged = orig.length - matches.length;
-      var groups = computeGroups(matches);
+      var groups = computeGroups(matches, (tour && tour.ko && tour.ko.teamCards));
       var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
       await saveTournament({ phase: (tour && tour.phase) || "groups", groups: groups, ko: newKo });
       setTour(function (t) { return Object.assign({}, t, { groups: groups, ko: newKo }); });
@@ -1474,7 +1559,7 @@ function AdminPanel({ tour, setTour, close }) {
         if (m.home && m.away) put(m);
       });
       var matches = Object.keys(map).map(function (k) { return map[k]; });
-      var groups = computeGroups(matches);
+      var groups = computeGroups(matches, (tour && tour.ko && tour.ko.teamCards));
       var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
       await saveTournament({ phase: "groups", groups: groups, ko: newKo, last_api_update: (new Date()).toISOString() });
       setTour(function (t) { return Object.assign({}, t, { phase: "groups", groups: groups, ko: newKo, last_api_update: (new Date()).toISOString() }); });
@@ -1563,23 +1648,13 @@ function AdminPanel({ tour, setTour, close }) {
                 </select>
                 <button onClick={saveMatch} style={{ padding: "6px 16px", border: "none", borderRadius: 6, background: $.pitchL, color: "#000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>登録</button>
               </div>
-              {/* フェアプレー（カード枚数）— APIが取りこぼすので手動で補正できる */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginTop: 8 }}>
-                <span style={{ fontSize: 10, color: $.dim, fontWeight: 700 }}>カード（任意）</span>
-                <span style={{ fontSize: 11, color: $.txt }}>{mHome || "ホーム"}</span>
-                <span style={{ fontSize: 11 }}>🟨</span>
-                <input type="number" min="0" value={mHy} onChange={function (e) { setMHy(e.target.value); }} placeholder="0" style={{ width: 38, padding: "5px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12, textAlign: "center" }} />
-                <span style={{ fontSize: 11 }}>🟥</span>
-                <input type="number" min="0" value={mHr} onChange={function (e) { setMHr(e.target.value); }} placeholder="0" style={{ width: 38, padding: "5px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12, textAlign: "center" }} />
-                <span style={{ fontSize: 11, color: $.txt, marginLeft: 8 }}>{mAway || "アウェイ"}</span>
-                <span style={{ fontSize: 11 }}>🟨</span>
-                <input type="number" min="0" value={mAy} onChange={function (e) { setMAy(e.target.value); }} placeholder="0" style={{ width: 38, padding: "5px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12, textAlign: "center" }} />
-                <span style={{ fontSize: 11 }}>🟥</span>
-                <input type="number" min="0" value={mAr} onChange={function (e) { setMAr(e.target.value); }} placeholder="0" style={{ width: 38, padding: "5px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12, textAlign: "center" }} />
-                <span style={{ fontSize: 9, color: $.dim }}>※チームを選ぶと既存値を表示。空欄なら0で上書き</span>
-              </div>
+              <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>※カード(フェアプレー)は下の「チーム別カード集計」でまとめて編集できます。</div>
               {mMsg && <div style={{ fontSize: 11, marginTop: 6, color: mMsg.startsWith("✓") ? $.pitchL : mMsg.startsWith("✕") ? $.redL : $.dim }}>{mMsg}</div>}
             </div>
+
+            {/* チーム別カード集計（フェアプレー）— チーム毎の累計枚数を直接編集 */}
+            <CardEditor tour={tour} setTour={setTour} />
+
 
             {/* データ同期 */}
             <div style={{ marginBottom: 16, padding: 12, background: "rgba(96,165,250,.06)", borderRadius: 8, border: "1px solid " + $.blue + "40" }}>
@@ -1970,10 +2045,11 @@ function jstParts(ts) {
   } catch (e) { return null; }
 }
 
-function LiveTab({ tour, liveStarted }) {
+function LiveTab({ tour, liveStarted, simKo, simAdv, resetSim, simActive }) {
   var phase = (tour && tour.phase) || "pre";
   var groups = (tour && tour.groups) || {};
   var ko = (tour && tour.ko) || {};
+  var simK = simKo || ko; // ブラケット表示・操作はシミュレーションkoを使用
   var friendlies = (tour && tour.friendlies) || [];
   var wcMatches = (tour && tour.ko && tour.ko.matches) || [];
   var lastUpd = tour && tour.last_api_update;
@@ -1989,11 +2065,11 @@ function LiveTab({ tour, liveStarted }) {
   var hasAnyGroup = Object.keys(groups || {}).length > 0;
   var liveLeftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
   var liveRightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
-  var liveLeftD = useMemo(function () { return deriveRounds(liveLeftRes, ko); }, [liveLeftRes, ko]);
-  var liveRightD = useMemo(function () { return deriveRounds(liveRightRes, ko); }, [liveRightRes, ko]);
-  // 読み取り専用 ctx（クリック無効）
+  var liveLeftD = useMemo(function () { return deriveRounds(liveLeftRes, simK); }, [liveLeftRes, simK]);
+  var liveRightD = useMemo(function () { return deriveRounds(liveRightRes, simK); }, [liveRightRes, simK]);
+  // ctx: 国名クリックで勝ち上がりをシミュレーション。3位枠はliveTpで解決済み表示（readOnlyで編集ピッカー無効）。
   var noop = function () {};
-  var liveCtx = { ko: ko, des: { A: null, B: null, C: null }, adv: noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true };
+  var liveCtx = { ko: simK, des: { A: null, B: null, C: null }, adv: simAdv || noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true };
 
   return (
     <div className="fade-in">
@@ -2130,13 +2206,16 @@ function LiveTab({ tour, liveStarted }) {
 
 
 
-      {/* 決勝トーナメント表（現順位で常時表示） */}
+      {/* 決勝トーナメント表（現順位で常時表示・クリックで勝ち上がりシミュレーション） */}
       {hasAnyGroup && (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 2 }}>🏆 決勝トーナメント表</div>
-          <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>{liveStarted ? "実際の勝ち上がりを表示" : "現在の順位にもとづく暫定組み合わせ（グループ確定で変動）"}</div>
-          <BView leftRes={liveLeftRes} rightRes={liveRightRes} leftD={liveLeftD} rightD={liveRightD} ko={ko} ctx={liveCtx} />
-          {ko.sf && ko.sf.length >= 2 && <ThirdP ko={ko} adv={noop} />}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 2 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: $.gold }}>🏆 決勝トーナメント表</div>
+            <button onClick={resetSim || noop} disabled={!simActive} style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: simActive ? "pointer" : "default", border: "1px solid " + (simActive ? $.gold + "70" : $.border), background: simActive ? "rgba(251,191,36,.10)" : "transparent", color: simActive ? $.goldL : $.dim }}>🔄 リセット</button>
+          </div>
+          <div style={{ fontSize: 11, color: simActive ? $.purpleL : $.dim, marginBottom: 10 }}>{simActive ? "🔮 シミュレーション中：結果はランキングに反映（この端末だけ）" : "国名をクリックすると勝ち上がりをシミュレーションでき、ランキングに反映されます"}</div>
+          <BView leftRes={liveLeftRes} rightRes={liveRightRes} leftD={liveLeftD} rightD={liveRightD} ko={simK} ctx={liveCtx} />
+          {simK.sf && simK.sf.length >= 2 && <ThirdP ko={simK} adv={simAdv || noop} />}
         </div>
       )}
 
