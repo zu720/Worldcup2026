@@ -2045,6 +2045,53 @@ function jstParts(ts) {
   } catch (e) { return null; }
 }
 
+// 各組3位ランキングを3段組（4チーム×3列）で表示。縦長を回避。
+function Third3({ ranking }) {
+  var head = (
+    <thead>
+      <tr style={{ color: $.dim, fontSize: 9 }}>
+        <th style={{ padding: "3px 5px", textAlign: "left" }}>順</th>
+        <th style={{ padding: "3px 4px" }}>組</th>
+        <th style={{ padding: "3px 5px", textAlign: "left" }}>チーム</th>
+        <th style={{ padding: "3px 3px" }}>試</th>
+        <th style={{ padding: "3px 4px", color: $.gold }}>勝点</th>
+        <th style={{ padding: "3px 4px" }}>得失</th>
+        <th style={{ padding: "3px 4px" }}>得点</th>
+        <th style={{ padding: "3px 4px" }} title="フェアプレー（黄-1/赤-4）">FP</th>
+        <th style={{ padding: "3px 4px" }} title="FIFA世界ランキング(2026/4)">FIFA</th>
+      </tr>
+    </thead>
+  );
+  var row = function (t) {
+    return (
+      <tr key={t.grp} style={{ borderTop: "1px solid " + $.border, background: t.top8 ? "rgba(34,197,94,.12)" : "transparent" }}>
+        <td style={{ padding: "4px 5px", fontFamily: fontH, fontSize: 13, color: t.top8 ? $.pitchL : $.dim }}>{t.rank}{t.top8 ? " ✓" : ""}</td>
+        <td style={{ padding: "4px 4px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.grp}</td>
+        <td style={{ padding: "4px 5px", whiteSpace: "nowrap" }}><Fl n={t.n} s={12} />{t.n}</td>
+        <td style={{ padding: "4px 3px", textAlign: "center", color: $.dim }}>{t.mp}</td>
+        <td style={{ padding: "4px 4px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.pts}</td>
+        <td style={{ padding: "4px 4px", textAlign: "center", color: t.gd > 0 ? $.pitchL : t.gd < 0 ? $.redL : $.dim }}>{t.gd > 0 ? "+" : ""}{t.gd}</td>
+        <td style={{ padding: "4px 4px", textAlign: "center" }}>{t.gf}</td>
+        <td style={{ padding: "4px 4px", textAlign: "center", color: $.dim }} title={"黄" + (t.yc || 0) + " 赤" + (t.rc || 0)}>{t.fp || 0}</td>
+        <td style={{ padding: "4px 4px", textAlign: "center", color: $.txt2 }}>{t.fifa && t.fifa < 999 ? t.fifa + "位" : "—"}</td>
+      </tr>
+    );
+  };
+  return (
+    <div className="third-cols" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, alignItems: "start" }}>
+      {[[0, 4], [4, 8], [8, 12]].map(function (rg, ci) {
+        return (
+          <div key={ci} style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 11, width: "100%" }}>
+              {head}
+              <tbody>{ranking.slice(rg[0], rg[1]).map(row)}</tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 function LiveTab({ tour, liveStarted, simKo, simAdv, resetSim, simActive }) {
   var phase = (tour && tour.phase) || "pre";
   var groups = (tour && tour.groups) || {};
@@ -2080,40 +2127,7 @@ function LiveTab({ tour, liveStarted, simKo, simAdv, resetSim, simActive }) {
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 2 }}>🥉 各組3位ランキング</div>
           <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>上位8チームが決勝トーナメント進出。順位＝勝点→得失点差→総得点→（フェアプレー）→FIFAランク。</div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: 380 }}>
-              <thead>
-                <tr style={{ color: $.dim, fontSize: 10 }}>
-                  <th style={{ padding: "4px 8px", textAlign: "left" }}>順</th>
-                  <th style={{ padding: "4px 6px" }}>組</th>
-                  <th style={{ padding: "4px 8px", textAlign: "left" }}>チーム</th>
-                  <th style={{ padding: "4px 6px" }}>試</th>
-                  <th style={{ padding: "4px 6px", color: $.gold }}>勝点</th>
-                  <th style={{ padding: "4px 6px" }}>得失</th>
-                  <th style={{ padding: "4px 6px" }}>得点</th>
-                  <th style={{ padding: "4px 6px" }} title="フェアプレー（黄-1/赤-4）">FP</th>
-                  <th style={{ padding: "4px 6px" }} title="FIFA世界ランキング(2026/4)">FIFA</th>
-                </tr>
-              </thead>
-              <tbody>
-                {thirdRanking.map(function (t) {
-                  return (
-                    <tr key={t.grp} style={{ borderTop: "1px solid " + $.border, background: t.top8 ? "rgba(34,197,94,.12)" : "transparent" }}>
-                      <td style={{ padding: "5px 8px", fontFamily: fontH, fontSize: 14, color: t.top8 ? $.pitchL : $.dim }}>{t.rank}{t.top8 ? " ✓" : ""}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.grp}</td>
-                      <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}><Fl n={t.n} s={13} />{t.n}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.dim }}>{t.mp}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.gold, fontWeight: 700 }}>{t.pts}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: t.gd > 0 ? $.pitchL : t.gd < 0 ? $.redL : $.dim }}>{t.gd > 0 ? "+" : ""}{t.gd}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center" }}>{t.gf}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.dim }} title={"黄" + (t.yc || 0) + " 赤" + (t.rc || 0)}>{t.fp || 0}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "center", color: $.txt2 }}>{t.fifa && t.fifa < 999 ? t.fifa + "位" : "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Third3 ranking={thirdRanking} />
           <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>緑＝暫定進出（上位8）。順位＝勝点→得失点差→総得点→フェアプレー(FP: 黄-1/赤-4)→FIFAランク(2026/4)。</div>
         </div>
       )}
@@ -2470,6 +2484,7 @@ function Styles() {
         .lb-arrow { font-size: 11px !important; }
         .lb-expand-bonuses { display: flex !important; }
         .rank-cols { grid-template-columns: 1fr !important; }
+        .third-cols { grid-template-columns: 1fr !important; }
         /* 投票一覧マトリクスをスマホでコンパクトに */
         .mx-name, .mx-cell { min-width: 50px !important; max-width: 50px !important; font-size: 8px !important; padding: 3px 2px !important; overflow: hidden !important; }
         .mx-cell span { gap: 1px !important; }
