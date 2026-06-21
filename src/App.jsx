@@ -2133,6 +2133,7 @@ function LiveTab({ tour, liveStarted, simKo, simAdv, resetSim, simActive }) {
   var liveTp = useMemo(function () { return (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : deriveTpProvisional(groups); }, [ko, groups]);
   var thirdRanking = useMemo(function () { return thirdPlaceRanking(groups); }, [groups]);
   var hasAnyGroup = Object.keys(groups || {}).length > 0;
+  var [showGroups, setShowGroups] = useState(false); // グループ星取表は既定で折り畳み
   var liveLeftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
   var liveRightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
   var liveLeftD = useMemo(function () { return deriveRounds(liveLeftRes, simK); }, [liveLeftRes, simK]);
@@ -2157,7 +2158,11 @@ function LiveTab({ tour, liveStarted, simKo, simAdv, resetSim, simActive }) {
 
       {(
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: 10 }}>📊 グループ星取表</div>
+          <div onClick={function () { setShowGroups(function (v) { return !v; }); }} style={{ fontSize: 14, fontWeight: 700, color: $.gold, marginBottom: showGroups ? 10 : 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, userSelect: "none" }}>
+            <span>📊 グループ星取表</span>
+            <span style={{ fontSize: 11, color: $.dim, fontWeight: 400 }}>{showGroups ? "▲ 閉じる" : "▼ 全グループの星取表を開く"}</span>
+          </div>
+          {showGroups && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 10 }}>
             {Object.keys(GRP).map(function (g) {
               // 試合がまだのグループも枠を表示（0スタート）
@@ -2236,6 +2241,7 @@ function LiveTab({ tour, liveStarted, simKo, simAdv, resetSim, simActive }) {
               );
             })}
           </div>
+          )}
         </div>
       )}
 
