@@ -1352,6 +1352,97 @@ function VoteStats({ teamStats, list }) {
 // ═══════════════════════════════════════════════════════════
 // Admin Panel (manual result entry)
 // ═══════════════════════════════════════════════════════════
+// 試合結果エディタ — グループ別に全6試合をリスト表示し、スコアを一括編集
+function MatchEditor({ tour, setTour }) {
+  var matches = (tour && tour.ko && tour.ko.matches) || [];
+  var [grp, setGrp] = useState("A");
+  var [msg, setMsg] = useState("");
+  var [saving, setSaving] = useState(false);
+  function findM(a, b) { return matches.find(function (m) { return (m.home === a && m.away === b) || (m.home === b && m.away === a); }); }
+  function initial() {
+    var o = {};
+    Object.keys(GRP).forEach(function (g) {
+      var ts = GRP[g].map(function (t) { return t.n; });
+      for (var i = 0; i < ts.length; i++) for (var j = i + 1; j < ts.length; j++) {
+        var a = ts[i], b = ts[j], mm = findM(a, b), k = [a, b].slice().sort().join("|");
+        o[k] = { home: mm ? mm.home : a, away: mm ? mm.away : b, hs: (mm && mm.hs != null) ? String(mm.hs) : "", as: (mm && mm.as != null) ? String(mm.as) : "" };
+      }
+    });
+    return o;
+  }
+  var [edits, setEdits] = useState(initial);
+  useEffect(function () { setEdits(initial()); }, [tour && tour.ko && tour.ko.matches]); // eslint-disable-line
+  function setVal(k, field, v) { setEdits(function (p) { var n = Object.assign({}, p); n[k] = Object.assign({}, n[k]); n[k][field] = v; return n; }); }
+  async function save() {
+    if (saving) return;
+    setSaving(true); setMsg("保存中...");
+    try {
+      var base = initial();
+      var ms = matches.slice();
+      var changed = 0, invalid = 0;
+      Object.keys(edits).forEach(function (k) {
+        var e = edits[k], m0 = base[k] || {};
+        if (String(e.hs) === String(m0.hs) && String(e.as) === String(m0.as)) return; // 変更なし
+        var bothEmpty = e.hs === "" && e.as === "", bothFilled = e.hs !== "" && e.as !== "";
+        if (!bothEmpty && !bothFilled) { invalid++; return; } // 片側だけはスキップ
+        var idx = ms.findIndex(function (m) { return (m.home === e.home && m.away === e.away) || (m.home === e.away && m.away === e.home); });
+        var prev = idx >= 0 ? ms[idx] : null;
+        var entry = Object.assign({}, prev || {}, {
+          home: e.home, away: e.away,
+          hs: bothEmpty ? null : Number(e.hs), as: bothEmpty ? null : Number(e.as),
+          status: bothEmpty ? "" : "FT", manual: true,
+          date: (prev && prev.date) || schedDate(e.home, e.away) || (new Date()).toISOString().slice(0, 10),
+          round: (prev && prev.round) || 1,
+        });
+        if (idx >= 0) ms[idx] = entry; else ms.push(entry);
+        changed++;
+      });
+      if (!changed) { setMsg(invalid ? "✕ スコアは両方入力してください" : "変更がありません"); setSaving(false); setTimeout(function () { setMsg(""); }, 2500); return; }
+      var groups = computeGroups(ms, (tour && tour.ko && tour.ko.teamCards));
+      var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: ms });
+      await saveTournament({ phase: "groups", groups: groups, ko: newKo });
+      setTour(function (t) { return Object.assign({}, t, { phase: "groups", groups: groups, ko: newKo }); });
+      setMsg("✓ " + changed + "試合を保存しました（星取表に即反映）" + (invalid ? "／" + invalid + "件は片側のみで未保存" : ""));
+      setTimeout(function () { setMsg(""); }, 3000);
+    } catch (e) { setMsg("✕ " + (e.message || e)); }
+    setSaving(false);
+  }
+  // 表示するグループの6カードを日程順で
+  var ts = GRP[grp].map(function (t) { return t.n; });
+  var pairs = [];
+  for (var i = 0; i < ts.length; i++) for (var j = i + 1; j < ts.length; j++) {
+    var a = ts[i], b = ts[j], mm = findM(a, b);
+    pairs.push({ k: [a, b].slice().sort().join("|"), date: (mm && mm.date) || schedDate(a, b) || "" });
+  }
+  pairs.sort(function (x, y) { return (x.date || "zzz").localeCompare(y.date || "zzz"); });
+  var sinp = { width: 40, padding: "6px 4px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 14, textAlign: "center" };
+  return (
+    <div style={{ marginBottom: 16, padding: 12, background: "rgba(52,211,153,.06)", borderRadius: 8, border: "1px solid " + $.pitchL + "40" }}>
+      <div style={{ fontSize: 12, color: $.pitchL, fontWeight: 700, marginBottom: 4 }}>🆕 試合結果を入力（グループ別・一括）</div>
+      <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>グループを選び、全6試合のスコアをまとめて入力→保存。手動入力は自動更新でも消えません（空欄のままは未開催）。</div>
+      <select value={grp} onChange={function (e) { setGrp(e.target.value); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
+        {Object.keys(GRP).map(function (g) { return <option key={g} value={g}>グループ{g}</option>; })}
+      </select>
+      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+        {pairs.map(function (p) {
+          var e = edits[p.k] || { home: "", away: "", hs: "", as: "" };
+          return (
+            <div key={p.k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <span style={{ width: 38, fontSize: 9, color: $.dim, flexShrink: 0 }}>{p.date ? p.date.slice(5) : ""}</span>
+              <span style={{ flex: 1, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}><Fl n={e.home} s={14} />{e.home}</span>
+              <input type="number" min="0" value={e.hs} onChange={function (ev) { setVal(p.k, "hs", ev.target.value); }} placeholder="–" style={sinp} />
+              <span style={{ color: $.dim }}>-</span>
+              <input type="number" min="0" value={e.as} onChange={function (ev) { setVal(p.k, "as", ev.target.value); }} placeholder="–" style={sinp} />
+              <span style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", display: "inline-flex", alignItems: "center", gap: 4 }}><Fl n={e.away} s={14} />{e.away}</span>
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={save} disabled={saving} style={{ marginTop: 10, padding: "8px 18px", border: "none", borderRadius: 6, background: saving ? $.dim : $.pitchL, color: "#000", fontWeight: 700, cursor: saving ? "wait" : "pointer", fontSize: 13 }}>グループ{grp}の結果を保存</button>
+      {msg && <div style={{ fontSize: 11, marginTop: 6, color: msg.startsWith("✓") ? $.pitchL : msg.startsWith("✕") ? $.redL : $.dim }}>{msg}</div>}
+    </div>
+  );
+}
 // チーム別カード集計エディタ（フェアプレー）— チーム毎の累計枚数を直接編集
 function CardEditor({ tour, setTour }) {
   var groups = (tour && tour.groups) || {};
@@ -1422,29 +1513,9 @@ function AdminPanel({ tour, setTour, close }) {
   var [ko, setKoL] = useState(JSON.parse(JSON.stringify((tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null })));
   var [msg, setMsg] = useState("");
   var [saving, setSaving] = useState(false);
-  // 試合結果 手動入力
-  var [mGroup, setMGroup] = useState("A");
-  var [mHome, setMHome] = useState("");
-  var [mAway, setMAway] = useState("");
-  var [mHs, setMHs] = useState("");
-  var [mAs, setMAs] = useState("");
-  var [mHy, setMHy] = useState(""); var [mHr, setMHr] = useState(""); // ホーム 黄/赤
-  var [mAy, setMAy] = useState(""); var [mAr, setMAr] = useState(""); // アウェイ 黄/赤
-  var [mMsg, setMMsg] = useState("");
   var [syncMsg, setSyncMsg] = useState("");
   var [syncing, setSyncing] = useState(false);
   // チーム選択時に既存試合の値（スコア・カード）を読み込む
-  function loadExisting(home, away) {
-    var ms = (tour && tour.ko && tour.ko.matches) || [];
-    var mm = ms.find(function (m) { return (m.home === home && m.away === away) || (m.home === away && m.away === home); });
-    if (!mm) { setMHs(""); setMAs(""); setMHy(""); setMHr(""); setMAy(""); setMAr(""); return; }
-    var rev = mm.home !== home; // 保存が逆順なら入れ替え
-    setMHs(String(rev ? (mm.as ?? "") : (mm.hs ?? ""))); setMAs(String(rev ? (mm.hs ?? "") : (mm.as ?? "")));
-    var c = mm.cards || {};
-    setMHy(String((rev ? c.ay : c.hy) || "")); setMHr(String((rev ? c.ar : c.hr) || ""));
-    setMAy(String((rev ? c.hy : c.ay) || "")); setMAr(String((rev ? c.hr : c.ar) || ""));
-  }
-
   function doUnlock() {
     if (pw === ADMIN_PW) { setUnlocked(true); setPwErr(""); }
     else setPwErr("合言葉が違います");
@@ -1474,32 +1545,6 @@ function AdminPanel({ tour, setTour, close }) {
       setSaving(false);
     }
   }
-  async function saveMatch() {
-    if (!mHome || !mAway || mHome === mAway) { setMMsg("✕ 2チームを選択"); return; }
-    if (mHs === "" || mAs === "") { setMMsg("✕ スコアを入力"); return; }
-    setMMsg("保存中...");
-    try {
-      var matches = ((tour && tour.ko && tour.ko.matches) || []).slice();
-      var i = matches.findIndex(function (m) { return m.home === mHome && m.away === mAway; });
-      var i2 = matches.findIndex(function (m) { return m.home === mAway && m.away === mHome; }); // 逆順登録があれば置換
-      var prev = i >= 0 ? matches[i] : i2 >= 0 ? matches[i2] : null;
-      var entry = {
-        date: (prev && prev.date) || (new Date()).toISOString().slice(0, 10),
-        ts: (prev && prev.ts) || "", id: (prev && prev.id) || "", round: (prev && prev.round) || 1,
-        home: mHome, away: mAway, hs: Number(mHs), as: Number(mAs), status: "FT", manual: true,
-      };
-      if (prev && prev.cards) entry.cards = prev.cards; // 既存カードは保持（FPは別途チーム別で管理）
-      if (i >= 0) matches[i] = entry; else if (i2 >= 0) matches[i2] = entry; else matches.push(entry);
-      var groups = computeGroups(matches, (tour && tour.ko && tour.ko.teamCards));
-      var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
-      await saveTournament({ phase: "groups", groups: groups, ko: newKo });
-      setTour(function (t) { return Object.assign({}, t, { phase: "groups", groups: groups, ko: newKo }); });
-      setMMsg("✓ 登録: " + mHome + " " + mHs + "-" + mAs + " " + mAway);
-      setMHome(""); setMAway(""); setMHs(""); setMAs("");
-      setTimeout(function () { setMMsg(""); }, 2500);
-    } catch (e) { setMMsg("✕ " + (e.message || e)); }
-  }
-
   // 試合結果を反映: 現在の試合データを重複排除して星取表を再計算（手動修正後やAPI連携後の手動反映用）
   async function reflectResults() {
     if (syncing) return;
@@ -1627,30 +1672,8 @@ function AdminPanel({ tour, setTour, close }) {
               </label>
             </div>
 
-            {/* 試合結果 手動入力 */}
-            <div style={{ marginBottom: 16, padding: 12, background: "rgba(52,211,153,.06)", borderRadius: 8, border: "1px solid " + $.pitchL + "40" }}>
-              <div style={{ fontSize: 12, color: $.pitchL, fontWeight: 700, marginBottom: 4 }}>🆕 試合結果を手動入力</div>
-              <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>APIが取りこぼした試合を直接登録（グループ星取表に即反映。自動更新でも消えません）。</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                <select value={mGroup} onChange={function (e) { setMGroup(e.target.value); setMHome(""); setMAway(""); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
-                  {Object.keys(GRP).map(function (g) { return <option key={g} value={g}>グループ{g}</option>; })}
-                </select>
-                <select value={mHome} onChange={function (e) { setMHome(e.target.value); loadExisting(e.target.value, mAway); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
-                  <option value="">ホーム</option>
-                  {GRP[mGroup].map(function (t) { return <option key={t.n} value={t.n}>{t.n}</option>; })}
-                </select>
-                <input type="number" value={mHs} onChange={function (e) { setMHs(e.target.value); }} placeholder="0" style={{ width: 44, padding: "6px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, textAlign: "center" }} />
-                <span style={{ color: $.dim }}>-</span>
-                <input type="number" value={mAs} onChange={function (e) { setMAs(e.target.value); }} placeholder="0" style={{ width: 44, padding: "6px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, textAlign: "center" }} />
-                <select value={mAway} onChange={function (e) { setMAway(e.target.value); loadExisting(mHome, e.target.value); }} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 12 }}>
-                  <option value="">アウェイ</option>
-                  {GRP[mGroup].map(function (t) { return <option key={t.n} value={t.n}>{t.n}</option>; })}
-                </select>
-                <button onClick={saveMatch} style={{ padding: "6px 16px", border: "none", borderRadius: 6, background: $.pitchL, color: "#000", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>登録</button>
-              </div>
-              <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>※カード(フェアプレー)は下の「チーム別カード集計」でまとめて編集できます。</div>
-              {mMsg && <div style={{ fontSize: 11, marginTop: 6, color: mMsg.startsWith("✓") ? $.pitchL : mMsg.startsWith("✕") ? $.redL : $.dim }}>{mMsg}</div>}
-            </div>
+            {/* 試合結果 手動入力（グループ別リストで一括編集） */}
+            <MatchEditor tour={tour} setTour={setTour} />
 
             {/* チーム別カード集計（フェアプレー）— チーム毎の累計枚数を直接編集 */}
             <CardEditor tour={tour} setTour={setTour} />
