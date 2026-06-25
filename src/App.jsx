@@ -515,8 +515,8 @@ export default function App() {
               adv={adv} ctx={ctx} score={score} tour={tour} liveStarted={liveStarted} fxByTeam={fxByTeam}
             />
           )}
-          {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} scoringKo={simScoringKo} simActive={simTouched} />}
-          {tab === "live" && <LiveTab tour={tour} liveStarted={liveStarted} simKo={simKo} simAdv={simAdv} resetSim={resetSim} simActive={simTouched} />}
+          {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} scoringKo={simScoringKo} simActive={simTouched} simKo={simKo} simAdv={simAdv} resetSim={resetSim} />}
+          {tab === "live" && <LiveTab tour={tour} liveStarted={liveStarted} />}
           {adminOpen && <AdminPanel tour={tour} setTour={setTour} close={function () { setAdminOpen(false); }} />}
           {rulesOpen && (
             <div onClick={function () { setRulesOpen(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 20, overflowY: "auto", backdropFilter: "blur(4px)" }}>
@@ -619,7 +619,7 @@ function RulesBody() {
         ・大穴を「推し」に指定して当てるとスコアが跳ねる
       </div>
       <div style={{ paddingTop: 8, borderTop: "1px solid " + $.border, color: $.txt2, fontSize: 11 }}>
-        <strong style={{ color: $.pitchL }}>📊 ランキング</strong>＝リアルタイム順位・各自の予想／<strong style={{ color: $.pitchL }}>⚽ 途中経過</strong>＝グループ星取表・各組3位ランキング・決勝トーナメント表。試合結果が入るたび自動でスコア再計算されます。
+        <strong style={{ color: $.pitchL }}>📊 ランキング</strong>＝リアルタイム順位・各自の予想・決勝トーナメント表（勝ち上がりシミュレーション）／<strong style={{ color: $.pitchL }}>⚽ 途中経過</strong>＝グループ星取表・各組3位ランキング。試合結果が入るたび自動でスコア再計算されます。
       </div>
     </div>
   );
@@ -974,7 +974,7 @@ function SaveBar({ saveStatus, savedAt, saveNow, glComplete, score }) {
 // ═══════════════════════════════════════════════════════════
 // Results Tab
 // ═══════════════════════════════════════════════════════════
-function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive }) {
+function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, simKo, simAdv, resetSim }) {
   var [list, setList] = useState([]);
   var [loading, setLoading] = useState(true);
   var [err, setErr] = useState("");
@@ -1300,6 +1300,9 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive }
           </div>
         );
       })()}
+
+      {/* 決勝トーナメント表（ランキングの下・クリックで勝ち上がりシミュレーション） */}
+      <TournamentBracket tour={tour} simKo={simKo} simAdv={simAdv} resetSim={resetSim} simActive={simActive} />
 
       {/* みんなの予想（一覧マトリクス）— ランキングの下 */}
       {rows.length > 0 && (
@@ -2186,11 +2189,37 @@ function Third3({ ranking }) {
     </div>
   );
 }
-function LiveTab({ tour, liveStarted, simKo, simAdv, resetSim, simActive }) {
+// 決勝トーナメント表（クリックで勝ち上がりシミュレーション／ランキングに反映）。ランキング画面に表示。
+function TournamentBracket({ tour, simKo, simAdv, resetSim, simActive }) {
+  var groups = (tour && tour.groups) || {};
+  var ko = (tour && tour.ko) || {};
+  var simK = simKo || ko;
+  var hasAnyGroup = Object.keys(groups || {}).length > 0;
+  var noop = function () {};
+  var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
+  var liveTp = useMemo(function () { return (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : deriveTpProvisional(groups); }, [ko, groups]);
+  var leftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
+  var rightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
+  var leftD = useMemo(function () { return deriveRounds(leftRes, simK); }, [leftRes, simK]);
+  var rightD = useMemo(function () { return deriveRounds(rightRes, simK); }, [rightRes, simK]);
+  var ctx = { ko: simK, des: { A: null, B: null, C: null }, adv: simAdv || noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true };
+  if (!hasAnyGroup) return null;
+  return (
+    <div style={{ marginTop: 30, marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 2 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: $.gold, letterSpacing: 1 }}>🏆 決勝トーナメント表</div>
+        <button onClick={resetSim || noop} disabled={!simActive} style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: simActive ? "pointer" : "default", border: "1px solid " + (simActive ? $.gold + "70" : $.border), background: simActive ? "rgba(251,191,36,.10)" : "transparent", color: simActive ? $.goldL : $.dim }}>🔄 リセット</button>
+      </div>
+      <div style={{ fontSize: 11, color: simActive ? $.purpleL : $.dim, marginBottom: 10 }}>{simActive ? "🔮 シミュレーション中：結果はランキングに反映（この端末だけ）" : "国名をクリックすると勝ち上がりをシミュレーションでき、上のランキングに反映されます"}</div>
+      <BView leftRes={leftRes} rightRes={rightRes} leftD={leftD} rightD={rightD} ko={simK} ctx={ctx} />
+      {simK.sf && simK.sf.length >= 2 && <ThirdP ko={simK} adv={simAdv || noop} />}
+    </div>
+  );
+}
+function LiveTab({ tour, liveStarted }) {
   var phase = (tour && tour.phase) || "pre";
   var groups = (tour && tour.groups) || {};
   var ko = (tour && tour.ko) || {};
-  var simK = simKo || ko; // ブラケット表示・操作はシミュレーションkoを使用
   var friendlies = (tour && tour.friendlies) || [];
   var wcMatches = (tour && tour.ko && tour.ko.matches) || [];
   var lastUpd = tour && tour.last_api_update;
@@ -2199,19 +2228,9 @@ function LiveTab({ tour, liveStarted, simKo, simAdv, resetSim, simActive }) {
   var wcUpcoming = wcMatches.filter(function (m) { return m.hs == null || m.as == null; }).sort(function (a, b) { return (a.date || "").localeCompare(b.date || ""); });
 
   // 実データからブラケット表示用に派生
-  var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
-  // 実R32があればそれ、無ければ現順位の上位8・3位で暫定割当
-  var liveTp = useMemo(function () { return (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : deriveTpProvisional(groups); }, [ko, groups]);
   var thirdRanking = useMemo(function () { return thirdPlaceRanking(groups); }, [groups]);
   var hasAnyGroup = Object.keys(groups || {}).length > 0;
   var [showGroups, setShowGroups] = useState(false); // グループ星取表は既定で折り畳み
-  var liveLeftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
-  var liveRightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
-  var liveLeftD = useMemo(function () { return deriveRounds(liveLeftRes, simK); }, [liveLeftRes, simK]);
-  var liveRightD = useMemo(function () { return deriveRounds(liveRightRes, simK); }, [liveRightRes, simK]);
-  // ctx: 国名クリックで勝ち上がりをシミュレーション。3位枠はliveTpで解決済み表示（readOnlyで編集ピッカー無効）。
-  var noop = function () {};
-  var liveCtx = { ko: simK, des: { A: null, B: null, C: null }, adv: simAdv || noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true };
 
   return (
     <div className="fade-in">
@@ -2319,19 +2338,6 @@ function LiveTab({ tour, liveStarted, simKo, simAdv, resetSim, simActive }) {
 
 
 
-
-      {/* 決勝トーナメント表（現順位で常時表示・クリックで勝ち上がりシミュレーション） */}
-      {hasAnyGroup && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 2 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: $.gold }}>🏆 決勝トーナメント表</div>
-            <button onClick={resetSim || noop} disabled={!simActive} style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: simActive ? "pointer" : "default", border: "1px solid " + (simActive ? $.gold + "70" : $.border), background: simActive ? "rgba(251,191,36,.10)" : "transparent", color: simActive ? $.goldL : $.dim }}>🔄 リセット</button>
-          </div>
-          <div style={{ fontSize: 11, color: simActive ? $.purpleL : $.dim, marginBottom: 10 }}>{simActive ? "🔮 シミュレーション中：結果はランキングに反映（この端末だけ）" : "国名をクリックすると勝ち上がりをシミュレーションでき、ランキングに反映されます"}</div>
-          <BView leftRes={liveLeftRes} rightRes={liveRightRes} leftD={liveLeftD} rightD={liveRightD} ko={simK} ctx={liveCtx} />
-          {simK.sf && simK.sf.length >= 2 && <ThirdP ko={simK} adv={simAdv || noop} />}
-        </div>
-      )}
 
       <div style={{ marginTop: 24, padding: 14, fontSize: 11, color: $.dim, border: "1px dashed " + $.border, borderRadius: 8, lineHeight: 1.7 }}>
         ※ 結果は管理者が手動入力するか、API経由で自動取得されます。<br />
