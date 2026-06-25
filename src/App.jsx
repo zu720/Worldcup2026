@@ -1167,41 +1167,33 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
               <div
                 onClick={function () { setOpen(isOpen ? null : r.name); }}
                 className="lb-row"
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", cursor: "pointer", flexWrap: "wrap" }}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 10px", cursor: "pointer", flexWrap: "nowrap" }}
               >
-                <div className="lb-rank" style={{ fontFamily: fontH, fontSize: 20, color: i === 0 ? $.gold : i === 1 ? "#bbb" : i === 2 ? "#cd7f32" : $.dim, width: 36, textAlign: "center", flexShrink: 0 }}>
+                <div className="lb-rank" style={{ fontFamily: fontH, fontSize: 15, color: i === 0 ? $.gold : i === 1 ? "#bbb" : i === 2 ? "#cd7f32" : $.dim, width: 24, textAlign: "center", flexShrink: 0 }}>
                   {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "#" + (i + 1)}
                 </div>
-                <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexShrink: 1 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: isMe ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
-                  {isMe && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700, flexShrink: 0 }}>あなた</span>}
-                  {r.vstyle && <span title="投票傾向" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, background: r.vstyle.bg, border: "1px solid " + r.vstyle.bd + "66", color: r.vstyle.cl, fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>{r.vstyle.emoji}{r.vstyle.l}</span>}
+                <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, flexShrink: 1 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: isMe ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
+                  {isMe && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700, flexShrink: 0 }}>あなた</span>}
                 </div>
-                <div className="lb-bonuses leaderboard-row-bonuses" style={{ display: "flex", gap: 6, flex: 1, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <div className="lb-bonuses leaderboard-row-bonuses" style={{ display: "flex", gap: 4, flex: 1, flexWrap: "nowrap", justifyContent: "flex-end", overflow: "hidden" }}>
                   {(["A", "B", "C"]).map(function (k) {
                     var n = r.des && r.des[k];
                     var cfg = DES[k];
-                    if (!n) return <span key={k} className="bonus-chip" style={{ fontSize: 10, padding: "2px 6px", borderRadius: 5, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l[0]}推—</span>;
+                    if (!n) return null;
                     return (
-                      <span key={k} className="bonus-chip" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, padding: "2px 7px", borderRadius: 5, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700, whiteSpace: "nowrap" }}>
-                        <span style={{ fontSize: 9, opacity: .8 }}>{cfg.l[0]}推</span>
-                        <Fl n={n} s={11} />{n}
+                      <span key={k} className="bonus-chip" style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10, padding: "1px 6px", borderRadius: 4, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+                        <span style={{ fontSize: 8, opacity: .8 }}>{cfg.l[0]}</span>
+                        <Fl n={n} s={10} />{n}
                       </span>
                     );
                   })}
                 </div>
-                <div className="lb-side" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, marginLeft: 6, fontSize: 12, lineHeight: 1.25, flexShrink: 0 }}>
-                  <div className="lb-stats leaderboard-row-stats" style={{ display: "flex", gap: 8, fontWeight: 700 }}>
-                    <span style={{ color: r.hits == null ? $.dim : r.hits > 0 ? $.pitchL : $.txt2 }}>突破{r.hits == null ? "—" : r.hits}/{r.total}</span>
-                    <span style={{ color: r.rank1 == null ? $.dim : r.rank1 > 0 ? $.gold : $.txt2 }}>1位{r.rank1 == null ? "—" : r.rank1}/{r.rank1Total}</span>
-                    <span style={{ color: r.rank2 == null ? $.dim : r.rank2 > 0 ? $.goldL : $.txt2 }}>2位{r.rank2 == null ? "—" : r.rank2}/{r.rank2Total}</span>
-                  </div>
-                  <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 2 }}>
-                    <div style={{ fontFamily: fontH, fontSize: 22, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
-                    <div style={{ fontSize: 11, color: $.txt2 }}>点</div>
-                  </div>
+                <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", alignItems: "baseline", gap: 3, flexShrink: 0 }}>
+                  <div style={{ fontFamily: fontH, fontSize: 17, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
+                  <div style={{ fontSize: 10, color: $.txt2 }}>点</div>
                 </div>
-                <div className="lb-arrow" style={{ color: $.dim, fontSize: 12, marginLeft: 4, flexShrink: 0 }}>{isOpen ? "▲" : "▼"}</div>
+                <div className="lb-arrow" style={{ color: $.dim, fontSize: 11, flexShrink: 0 }}>{isOpen ? "▲" : "▼"}</div>
               </div>
               {isOpen && (
                 <div style={{ borderTop: "1px solid " + $.border, padding: 10, background: "rgba(0,0,0,.18)" }}>
