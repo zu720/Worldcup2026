@@ -2004,44 +2004,61 @@ function MatrixTab({ myName: myName_, tour, list }) {
     return best ? { team: best, n: bn } : null;
   }
 
-  // 尖った投票（人と違う予想）ベスト3
-  var contrarianTop = useMemo(function () {
-    var N = members.length; if (N === 0) return [];
-    var popG = {}, popO = {};
-    members.forEach(function (m) {
-      Object.keys(GRP).forEach(function (g) { [0, 1].forEach(function (p) { var t = (m.gl && m.gl[g] || [])[p]; if (t) popG[g + "|" + p + "|" + t] = (popG[g + "|" + p + "|" + t] || 0) + 1; }); });
-      ["A", "B", "C"].forEach(function (s) { var t = m.des && m.des[s]; if (t) popO[t] = (popO[t] || 0) + 1; });
+  // ピックアップ: 確定グループの的中度から「めっちゃ当ててる/外してる/みんなが外したのに当てた人」を抽出
+  var pickups = useMemo(function () {
+    var decided = Object.keys(GRP).filter(function (g) { var a = actualGroups[g] || []; return a.length === 4 && a.every(function (t) { return (t.mp || 0) >= 3; }); });
+    if (!decided.length || !members.length) return null;
+    var slots = []; decided.forEach(function (g) { var a = actualGroups[g]; [0, 1].forEach(function (p) { if (a[p]) slots.push({ g: g, pos: p, team: a[p].n }); }); });
+    var perM = members.map(function (m) {
+      var ex = 0, ad = 0, th = 0, ng = 0, picks = 0;
+      decided.forEach(function (g) {
+        [0, 1].forEach(function (p) {
+          var t = (m.gl && m.gl[g] || [])[p]; if (!t) return; picks++;
+          var oc = predOutcome(g, t, p, actualGroups, thirdSet);
+          if (oc === "exact") ex++; else if (oc === "advance") ad++; else if (oc === "third") th++; else if (oc === "out") ng++;
+        });
+      });
+      return { name: m.name, ex: ex, ad: ad, th: th, ng: ng, hit: ex + ad, picks: picks, score: ex + ad * 0.7 + th * 0.3 };
+    }).filter(function (x) { return x.picks > 0; });
+    if (!perM.length) return null;
+    var best = perM.slice().sort(function (a, b) { return b.score - a.score || b.ex - a.ex || a.ng - b.ng; })[0];
+    var worst = perM.slice().sort(function (a, b) { return b.ng - a.ng || a.hit - b.hit || a.score - b.score; })[0];
+    // みんなが外したのに当てた: 「ぴったり順位的中」者が最少のスロット
+    var rare = null;
+    slots.forEach(function (s) {
+      var hitters = members.filter(function (m) { return ((m.gl && m.gl[s.g] || [])[s.pos]) === s.team; }).map(function (m) { return m.name; });
+      if (hitters.length >= 1 && hitters.length < members.length && (!rare || hitters.length < rare.hitters.length)) rare = { g: s.g, pos: s.pos, team: s.team, hitters: hitters };
     });
-    return members.map(function (m) {
-      var sc = 0, cnt = 0;
-      Object.keys(GRP).forEach(function (g) { [0, 1].forEach(function (p) { var t = (m.gl && m.gl[g] || [])[p]; if (t) { sc += (N - (popG[g + "|" + p + "|" + t] || 1)); cnt++; } }); });
-      ["A", "B", "C"].forEach(function (s) { var t = m.des && m.des[s]; if (t) { sc += (N - (popO[t] || 1)); cnt++; } });
-      return { name: m.name, des: m.des || {}, score: cnt ? sc / cnt : 0, pct: N > 1 ? Math.round((cnt ? sc / cnt : 0) / (N - 1) * 100) : 0 };
-    }).sort(function (a, b) { return b.score - a.score; }).slice(0, 3);
-  }, [members]);
+    return { best: best, worst: worst, lone: rare, N: members.length, groups: decided.length };
+  }, [members, actualGroups, thirdSet]);
 
   var cellW = 96, LBL = 46, POP = 66;
   return (
     <div className="fade-in">
-      {/* 尖った投票ベスト3 */}
-      {contrarianTop.length > 0 && (
+      {/* ピックアップ（確定グループの的中度から毎回算出） */}
+      {pickups && (
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: $.gold, marginBottom: 6 }}>🌶 もっとも尖った投票 ベスト3 <span style={{ fontSize: 10, color: $.dim, fontWeight: 400 }}>（みんなと違う予想ほど高い）</span></div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {contrarianTop.map(function (c, i) {
-              return (
-                <div key={c.name} className="lift" style={{ flex: "1 1 200px", minWidth: 170, borderRadius: 10, border: "1px solid " + (i === 0 ? $.red + "70" : $.border), background: i === 0 ? "rgba(248,113,113,.10)" : $.card, padding: "8px 12px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontFamily: fontH, fontSize: 18, color: i === 0 ? $.redL : i === 1 ? "#bbb" : "#cd7f32" }}>{i + 1}</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: c.name === myName_ ? $.gold : $.txt }}>{c.name}</span>
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: $.redL, fontWeight: 700 }}>独自度 {c.pct}%</span>
-                  </div>
-                  <div style={{ fontSize: 10, color: $.dim, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {["A", "B", "C"].map(function (k) { var n = c.des[k]; return n ? <span key={k} style={{ marginRight: 6, color: DES[k].cl }}><Fl n={n} s={11} />{n}</span> : null; })}
-                  </div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: $.gold, marginBottom: 6 }}>📌 ピックアップ <span style={{ fontSize: 10, color: $.dim, fontWeight: 400 }}>（確定した{pickups.groups}グループの的中度）</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 8 }}>
+            <div className="lift" style={{ borderRadius: 10, border: "1px solid " + $.pitchL + "70", background: "rgba(34,197,94,.10)", padding: "9px 12px" }}>
+              <div style={{ fontSize: 11, color: $.pitchL, fontWeight: 700, marginBottom: 3 }}>🎯 めっちゃ当ててる人</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: pickups.best.name === myName_ ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pickups.best.name}</div>
+              <div style={{ fontSize: 10, color: $.dim, marginTop: 2 }}>順位的中 {pickups.best.ex}・通過的中 {pickups.best.ad}{pickups.best.th ? "・3位通過 " + pickups.best.th : ""}</div>
+            </div>
+            <div className="lift" style={{ borderRadius: 10, border: "1px solid " + $.red + "70", background: "rgba(248,113,113,.10)", padding: "9px 12px" }}>
+              <div style={{ fontSize: 11, color: $.redL, fontWeight: 700, marginBottom: 3 }}>🌀 めっちゃ外してる人</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: pickups.worst.name === myName_ ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pickups.worst.name}</div>
+              <div style={{ fontSize: 10, color: $.dim, marginTop: 2 }}>予選敗退 {pickups.worst.ng}・通過的中 {pickups.worst.hit}</div>
+            </div>
+            <div className="lift" style={{ borderRadius: 10, border: "1px solid " + $.gold + "70", background: "rgba(245,197,24,.10)", padding: "9px 12px" }}>
+              <div style={{ fontSize: 11, color: $.gold, fontWeight: 700, marginBottom: 3 }}>💎 みんなが外したのに当てた</div>
+              {pickups.lone ? (
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pickups.lone.hitters.slice(0, 3).join("・")}{pickups.lone.hitters.length > 3 ? " 他" + (pickups.lone.hitters.length - 3) + "人" : ""}</div>
+                  <div style={{ fontSize: 10, color: $.dim, marginTop: 2, display: "inline-flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>グループ{pickups.lone.g} {pickups.lone.pos + 1}位 <Fl n={pickups.lone.team} s={11} />{pickups.lone.team} を的中（{pickups.lone.hitters.length}/{pickups.N}人）</div>
                 </div>
-              );
-            })}
+              ) : <div style={{ fontSize: 11, color: $.dim }}>まだ目立つ的中はありません</div>}
+            </div>
           </div>
         </div>
       )}
