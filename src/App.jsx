@@ -289,6 +289,26 @@ function thirdPlaceRanking(groups) {
   thirds.forEach(function (t, i) { t.rank = i + 1; t.top8 = i < 8; });
   return thirds;
 }
+// 予想の的中判定（そのグループの全試合が確定したときのみ色分け）。
+// exact=順位的中 / advance=通過的中(順位違い) / third=3位通過 / out=予選敗退 / null=未確定
+function predOutcome(grp, team, predPos, groups, thirdSet) {
+  if (!team) return null;
+  var arr = (groups && groups[grp]) || [];
+  if (arr.length < 4 || !arr.every(function (t) { return (t.mp || 0) >= 3; })) return null; // 順位未確定
+  var actualIdx = arr.findIndex(function (t) { return t.n === team; });
+  if (actualIdx < 0) return null;
+  if (actualIdx === predPos) return "exact";        // 予想順位どおり
+  if (actualIdx <= 1) return "advance";             // 1・2位通過（予想順位は違う）
+  if (actualIdx === 2 && thirdSet && thirdSet.has(team)) return "third"; // 3位だが上位8で通過
+  return "out";                                     // 予選敗退
+}
+var OUTCOME = {
+  exact:   { bg: "rgba(245,197,24,.22)",  c: $.gold,    l: "順位的中" },
+  advance: { bg: "rgba(34,197,94,.18)",   c: $.pitchL,  l: "通過的中" },
+  third:   { bg: "rgba(232,161,58,.20)",  c: "#e8a13a", l: "3位通過" },
+  out:     { bg: "rgba(248,113,113,.14)", c: $.redL,    l: "予選敗退" },
+};
+function thirdSetOf(groups) { return new Set(thirdPlaceRanking(groups).filter(function (t) { return t.top8; }).map(function (t) { return t.n; })); }
 // 上位8グループの3位を FIFA公式割当表(TP_ALLOC, 495通り)で R32 の「3(...)」枠に割当。
 // 候補集合だけでは6〜72通りに分岐するため、二部マッチングでなく公式表を引く必要がある。
 function deriveTpProvisional(groups) {
@@ -977,6 +997,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive }
   // 通常は暫定順位、シミュレーション操作中はその結果でスコア計算（端末ローカル）
   var koForScore = scoringKo || provisionalKo(tour);
   var groupsForScore = (tour && tour.groups) || {};
+  var thirdSet = thirdSetOf(groupsForScore); // 3位通過判定用（実グループ結果ベース）
 
   var rows = useMemo(function () {
     var actualR32 = koForScore.r32 || []; // 暫定R32（試合消化グループの上位2）
@@ -1144,7 +1165,13 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive }
                       );
                     })}
                   </div>
-                  <div style={{ fontSize: 11, color: $.gold, marginBottom: 6, fontWeight: 700 }}>グループ予想</div>
+                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: $.gold, fontWeight: 700 }}>グループ予想</span>
+                    {["exact", "advance", "third", "out"].map(function (k) {
+                      return <span key={k} style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: OUTCOME[k].bg, color: OUTCOME[k].c, fontWeight: 700 }}>{OUTCOME[k].l}</span>;
+                    })}
+                    <span style={{ fontSize: 8, color: $.dim }}>（グループ確定後に色分け）</span>
+                  </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 4, fontSize: 10 }}>
                     {Object.keys(GRP).map(function (g) {
                       var ranks = (r.gl && r.gl[g]) || [];
@@ -1152,7 +1179,15 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive }
                         <div key={g} style={{ padding: 6, background: "rgba(255,255,255,.03)", borderRadius: 5, border: "1px solid " + $.border }}>
                           <div style={{ fontSize: 10, color: $.gold, fontWeight: 700, marginBottom: 2 }}>{g}</div>
                           {ranks.length === 0 ? <span style={{ color: $.dim }}>—</span> : ranks.slice(0, 2).map(function (n, idx) {
-                            return <div key={n} style={{ display: "flex", alignItems: "center", gap: 3 }}><span style={{ color: $.dim, width: 10 }}>{idx + 1}</span><Fl n={n} s={11} />{n}</div>;
+                            var oc = predOutcome(g, n, idx, groupsForScore, thirdSet), cfg = oc ? OUTCOME[oc] : null;
+                            return (
+                              <div key={n} style={{ display: "flex", alignItems: "center", gap: 3, padding: cfg ? "1px 3px" : 0, borderRadius: 4, background: cfg ? cfg.bg : "transparent" }}>
+                                <span style={{ color: cfg ? cfg.c : $.dim, width: 10 }}>{idx + 1}</span>
+                                <Fl n={n} s={11} />
+                                <span style={{ color: cfg ? cfg.c : $.txt2, textDecoration: oc === "out" ? "line-through" : "none" }}>{n}</span>
+                                {cfg && <span style={{ marginLeft: "auto", fontSize: 8, color: cfg.c, fontWeight: 700, flexShrink: 0 }}>{cfg.l}</span>}
+                              </div>
+                            );
                           })}
                         </div>
                       );
@@ -1932,6 +1967,7 @@ function MatrixTab({ myName: myName_, tour, list }) {
   list = list || [];
   // 実際の結果（正解判定用）
   var actualGroups = (tour && tour.groups) || {};
+  var thirdSet = thirdSetOf(actualGroups);
 
   var members = useMemo(function () {
     return list.slice().sort(function (a, b) { return (a.name || "").localeCompare(b.name || "", "ja"); });
@@ -2009,6 +2045,14 @@ function MatrixTab({ myName: myName_, tour, list }) {
           </div>
         </div>
       )}
+      {members.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, margin: "0 0 8px" }}>
+          <span style={{ fontSize: 10, color: $.dim }}>グループ確定後に色分け：</span>
+          {[["exact", "◎"], ["advance", "◯"], ["third", "△"], ["out", "✕"]].map(function (x) {
+            return <span key={x[0]} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: OUTCOME[x[0]].bg, color: OUTCOME[x[0]].c, fontWeight: 700 }}>{x[1]} {OUTCOME[x[0]].l}</span>;
+          })}
+        </div>
+      )}
       {members.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12 }}>まだ予想がありません</div>
       ) : (
@@ -2037,10 +2081,12 @@ function MatrixTab({ myName: myName_, tour, list }) {
                     </td>
                     {members.map(function (m) {
                       var team = rd.get(m);
-                      var correct = isCorrect(rd, team);
+                      var oc = isOshi ? null : predOutcome(rd.grp, team, rd.pos, actualGroups, thirdSet);
+                      var cfg = oc ? OUTCOME[oc] : null;
+                      var mark = oc === "exact" ? "◎" : oc === "advance" ? "◯" : oc === "third" ? "△" : oc === "out" ? "✕" : "";
                       return (
-                        <td key={m.name} className="mx-cell" title={team || ""} style={{ padding: "4px 6px", borderRight: "1px solid rgba(255,255,255,.05)", borderTop: groupStart ? "2px solid " + $.border : "1px solid rgba(255,255,255,.04)", background: isOshi ? "rgba(251,191,36,.05)" : correct ? "rgba(34,197,94,.16)" : "transparent", whiteSpace: "nowrap", color: team ? $.txt : $.dim }}>
-                          {team ? <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Fl n={team} s={12} />{team}{correct && <span style={{ color: $.pitchL, marginLeft: 2 }}>◯</span>}</span> : "—"}
+                        <td key={m.name} className="mx-cell" title={(team || "") + (cfg ? "（" + cfg.l + "）" : "")} style={{ padding: "4px 6px", borderRight: "1px solid rgba(255,255,255,.05)", borderTop: groupStart ? "2px solid " + $.border : "1px solid rgba(255,255,255,.04)", background: isOshi ? "rgba(251,191,36,.05)" : cfg ? cfg.bg : "transparent", whiteSpace: "nowrap", color: cfg ? cfg.c : team ? $.txt : $.dim }}>
+                          {team ? <span style={{ display: "inline-flex", alignItems: "center", gap: 3, textDecoration: oc === "out" ? "line-through" : "none" }}><Fl n={team} s={12} />{team}{mark && <span style={{ marginLeft: 2 }}>{mark}</span>}</span> : "—"}
                         </td>
                       );
                     })}
