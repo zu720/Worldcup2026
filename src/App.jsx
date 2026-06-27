@@ -1071,10 +1071,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
     var worst = perM.slice().sort(function (a, b) { return b.ng - a.ng || a.hit - b.hit || a.score - b.score; })[0];
     var rare = null;
     slots.forEach(function (s) { var hitters = mem.filter(function (m) { return ((m.gl && m.gl[s.g] || [])[s.pos]) === s.team; }).map(function (m) { return m.name; }); if (hitters.length >= 1 && hitters.length < mem.length && (!rare || hitters.length < rare.hitters.length)) rare = { g: s.g, pos: s.pos, team: s.team, hitters: hitters }; });
-    // 突破的中ランキング（予想した上位2のうち実際に決勝T進出した数。3位通過も含む）。同数は順位的中(ex)で上位。
-    var rankList = perM.slice().sort(function (a, b) { return b.bt - a.bt || b.ex - a.ex || a.ng - b.ng; });
-    rankList.forEach(function (m, i) { m.rk = (i > 0 && m.bt === rankList[i - 1].bt && m.ex === rankList[i - 1].ex) ? rankList[i - 1].rk : i + 1; });
-    return { best: best, worst: worst, lone: rare, N: mem.length, groups: decided.length, rank: rankList, maxBt: 2 * decided.length };
+    return { best: best, worst: worst, lone: rare, N: mem.length, groups: decided.length };
   }, [list, groupsForScore, thirdSet]);
 
   if (loading) {
@@ -1118,26 +1115,6 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 </div>
               ) : <div style={{ fontSize: 11, color: $.dim }}>まだ目立つ的中はありません</div>}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* 突破的中ランキング（コンパクト・確定グループで実際に進出した予想数） */}
-      {pickups && pickups.rank && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: $.gold, marginBottom: 5 }}>🎯 突破的中ランキング <span style={{ fontSize: 9, color: $.dim, fontWeight: 400 }}>（確定{pickups.groups}グループ・最大{pickups.maxBt}／数字=進出的中・順=順位も的中）</span></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(132px,1fr))", gap: 4 }}>
-            {pickups.rank.map(function (m) {
-              var top = m.rk <= 3;
-              return (
-                <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 7px", borderRadius: 5, fontSize: 11, background: top ? "rgba(245,197,24,.10)" : "rgba(255,255,255,.03)", border: "1px solid " + (top ? $.gold + "40" : $.border) }}>
-                  <span style={{ fontFamily: fontH, fontSize: 12, width: 16, textAlign: "center", flexShrink: 0, color: m.rk === 1 ? $.gold : m.rk === 2 ? "#bbb" : m.rk === 3 ? "#cd7f32" : $.dim }}>{m.rk}</span>
-                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: m.name === myName_ ? $.gold : $.txt2 }}>{m.name}</span>
-                  <span style={{ fontFamily: fontH, fontWeight: 700, color: $.pitchL, flexShrink: 0 }}>{m.bt}</span>
-                  {m.ex > 0 && <span style={{ fontSize: 8, color: $.gold, flexShrink: 0 }}>順{m.ex}</span>}
-                </div>
-              );
-            })}
           </div>
         </div>
       )}
