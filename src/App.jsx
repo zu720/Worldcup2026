@@ -1126,23 +1126,31 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
   }, [list]);
 
   // ピックアップ: 確定グループの的中度から「めっちゃ当ててる/外してる/みんなが外したのに当てた人」
-  var pickups = useMemo(function () {
-    var mem = list || [];
-    var decided = Object.keys(GRP).filter(function (g) { var a = groupsForScore[g] || []; return a.length === 4 && a.every(function (t) { return (t.mp || 0) >= 3; }); });
-    if (!decided.length || !mem.length) return null;
-    var slots = []; decided.forEach(function (g) { var a = groupsForScore[g]; [0, 1].forEach(function (p) { if (a[p]) slots.push({ g: g, pos: p, team: a[p].n }); }); });
-    var perM = mem.map(function (m) {
-      var ex = 0, ad = 0, th = 0, ng = 0, picks = 0;
-      decided.forEach(function (g) { [0, 1].forEach(function (p) { var t = (m.gl && m.gl[g] || [])[p]; if (!t) return; picks++; var oc = predOutcome(g, t, p, groupsForScore, thirdSet); if (oc === "exact") ex++; else if (oc === "advance") ad++; else if (oc === "third") th++; else if (oc === "out") ng++; }); });
-      return { name: m.name, ex: ex, ad: ad, th: th, ng: ng, hit: ex + ad, bt: ex + ad + th, picks: picks, score: ex + ad * 0.7 + th * 0.3 };
-    }).filter(function (x) { return x.picks > 0; });
-    if (!perM.length) return null;
-    var best = perM.slice().sort(function (a, b) { return b.score - a.score || b.ex - a.ex || a.ng - b.ng; })[0];
-    var worst = perM.slice().sort(function (a, b) { return b.ng - a.ng || a.hit - b.hit || a.score - b.score; })[0];
-    var rare = null;
-    slots.forEach(function (s) { var hitters = mem.filter(function (m) { return ((m.gl && m.gl[s.g] || [])[s.pos]) === s.team; }).map(function (m) { return m.name; }); if (hitters.length >= 1 && hitters.length < mem.length && (!rare || hitters.length < rare.hitters.length)) rare = { g: s.g, pos: s.pos, team: s.team, hitters: hitters }; });
-    return { best: best, worst: worst, lone: rare, N: mem.length, groups: decided.length };
-  }, [list, groupsForScore, thirdSet]);
+  // 敗退チーム（推しチップに取り消し線）: 確定グループで非進出(3位非通過・4位) ＋ KOで敗退した側
+  var eliminated = useMemo(function () {
+    var s = new Set();
+    Object.keys(GRP).forEach(function (g) {
+      var arr = groupsForScore[g] || [];
+      if (arr.length === 4 && arr.every(function (t) { return (t.mp || 0) >= 3; })) {
+        arr.forEach(function (t, i) { if (i === 3 || (i === 2 && !thirdSet.has(t.n))) s.add(t.n); });
+      }
+    });
+    ((tour && tour.ko && tour.ko.matches) || []).forEach(function (m) {
+      if ((m.round || 0) > 3 && m.hs != null && m.as != null) { var L = m.hs > m.as ? m.away : m.as > m.hs ? m.home : null; if (L) s.add(L); }
+    });
+    return s;
+  }, [groupsForScore, thirdSet, tour]);
+  // 各メンバーの突破的中/順位的中（確定グループのみ）
+  function memberHits(m) {
+    var brk = 0, pos = 0, dec = 0;
+    Object.keys(GRP).forEach(function (g) {
+      ((m.gl && m.gl[g]) || []).slice(0, 2).forEach(function (tn, i) {
+        if (!tn) return; var oc = predOutcome(g, tn, i, groupsForScore, thirdSet);
+        if (oc) { dec++; if (oc === "exact" || oc === "advance" || oc === "third") brk++; if (oc === "exact") pos++; }
+      });
+    });
+    return { brk: brk, pos: pos, dec: dec };
+  }
 
   if (loading) {
     return <div style={{ padding: 60, textAlign: "center", color: $.dim, fontSize: 14 }}>読み込み中...</div>;
@@ -1161,33 +1169,6 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         </div>
       )}
 
-      {/* ピックアップ（ランキングの上・確定グループの的中度から毎回算出） */}
-      {pickups && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: $.gold, marginBottom: 6 }}>📌 ピックアップ <span style={{ fontSize: 10, color: $.dim, fontWeight: 400 }}>（確定した{pickups.groups}グループの的中度）</span></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 8 }}>
-            <div className="lift" style={{ borderRadius: 10, border: "1px solid " + $.pitchL + "70", background: "rgba(34,197,94,.10)", padding: "9px 12px" }}>
-              <div style={{ fontSize: 11, color: $.pitchL, fontWeight: 700, marginBottom: 3 }}>🎯 めっちゃ当ててる人</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: pickups.best.name === myName_ ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pickups.best.name}</div>
-              <div style={{ fontSize: 10, color: $.dim, marginTop: 2 }}>順位的中 {pickups.best.ex}・通過的中 {pickups.best.ad}{pickups.best.th ? "・3位通過 " + pickups.best.th : ""}</div>
-            </div>
-            <div className="lift" style={{ borderRadius: 10, border: "1px solid " + $.red + "70", background: "rgba(248,113,113,.10)", padding: "9px 12px" }}>
-              <div style={{ fontSize: 11, color: $.redL, fontWeight: 700, marginBottom: 3 }}>🌀 めっちゃ外してる人</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: pickups.worst.name === myName_ ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pickups.worst.name}</div>
-              <div style={{ fontSize: 10, color: $.dim, marginTop: 2 }}>予選敗退 {pickups.worst.ng}・通過的中 {pickups.worst.hit}</div>
-            </div>
-            <div className="lift" style={{ borderRadius: 10, border: "1px solid " + $.gold + "70", background: "rgba(245,197,24,.10)", padding: "9px 12px" }}>
-              <div style={{ fontSize: 11, color: $.gold, fontWeight: 700, marginBottom: 3 }}>💎 みんなが外したのに当てた</div>
-              {pickups.lone ? (
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pickups.lone.hitters.slice(0, 3).join("・")}{pickups.lone.hitters.length > 3 ? " 他" + (pickups.lone.hitters.length - 3) + "人" : ""}</div>
-                  <div style={{ fontSize: 10, color: $.dim, marginTop: 2, display: "inline-flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>グループ{pickups.lone.g} {pickups.lone.pos + 1}位 <Fl n={pickups.lone.team} s={11} />{pickups.lone.team} を的中（{pickups.lone.hitters.length}/{pickups.N}人）</div>
-                </div>
-              ) : <div style={{ fontSize: 11, color: $.dim }}>まだ目立つ的中はありません</div>}
-            </div>
-          </div>
-        </div>
-      )}
 
       {rows.length === 0 && (
         <div style={{ padding: 60, textAlign: "center", color: $.dim, border: "1px dashed " + $.border, borderRadius: 12 }}>
@@ -1200,6 +1181,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         var renderRow = function (r, i) {
           var isMe = r.name === myName_;
           var isOpen = open === r.name;
+          var h = memberHits(r);
           return (
             <div
               key={r.name}
@@ -1222,15 +1204,17 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, flexShrink: 1 }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: isMe ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
                   {isMe && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700, flexShrink: 0 }}>あなた</span>}
+                  {h.dec > 0 && <span className="lb-hits" title="確定グループでの突破的中・うち順位的中" style={{ fontSize: 9, color: $.dim, flexShrink: 0, whiteSpace: "nowrap" }}>突破<b style={{ color: $.pitchL }}>{h.brk}</b>/順<b style={{ color: $.gold }}>{h.pos}</b></span>}
                 </div>
                 <div className="lb-bonuses leaderboard-row-bonuses" style={{ display: "flex", gap: 4, flex: 1, flexWrap: "nowrap", justifyContent: "flex-end", overflow: "hidden" }}>
                   {(["A", "B", "C"]).map(function (k) {
                     var n = r.des && r.des[k];
                     var cfg = DES[k];
                     if (!n) return null;
+                    var out = eliminated.has(n); // 敗退チームは取り消し線
                     return (
-                      <span key={k} className="bonus-chip" style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10, padding: "1px 6px", borderRadius: 4, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
-                        <span style={{ fontSize: 8, opacity: .8 }}>{cfg.l[0]}</span>
+                      <span key={k} className="bonus-chip" title={out ? n + "（敗退）" : n} style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10, padding: "1px 6px", borderRadius: 4, background: out ? "rgba(255,255,255,.04)" : cfg.bg, border: "1px solid " + (out ? $.border : cfg.c + "55"), color: out ? $.dim : cfg.cl, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, textDecoration: out ? "line-through" : "none", opacity: out ? .7 : 1 }}>
+                        <span style={{ fontSize: 8, opacity: .8, textDecoration: "none" }}>{cfg.l[0]}</span>
                         <Fl n={n} s={10} />{n}
                       </span>
                     );
@@ -1250,9 +1234,10 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                       var n = r.des && r.des[k];
                       var cfg = DES[k];
                       if (!n) return <span key={k} style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, border: "1px dashed " + $.border, color: $.dim }}>{cfg.l}—</span>;
+                      var out = eliminated.has(n);
                       return (
-                        <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, padding: "3px 7px", borderRadius: 4, background: cfg.bg, border: "1px solid " + cfg.c + "55", color: cfg.cl, fontWeight: 700 }}>
-                          <span style={{ fontSize: 9, opacity: .8 }}>{cfg.l}</span>
+                        <span key={k} title={out ? n + "（敗退）" : n} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, padding: "3px 7px", borderRadius: 4, background: out ? "rgba(255,255,255,.04)" : cfg.bg, border: "1px solid " + (out ? $.border : cfg.c + "55"), color: out ? $.dim : cfg.cl, fontWeight: 700, textDecoration: out ? "line-through" : "none", opacity: out ? .7 : 1 }}>
+                          <span style={{ fontSize: 9, opacity: .8, textDecoration: "none" }}>{cfg.l}</span>
                           <Fl n={n} s={11} />{n}
                         </span>
                       );
