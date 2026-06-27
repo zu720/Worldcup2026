@@ -322,6 +322,74 @@ function deriveTpProvisional(groups) {
   return tp;
 }
 
+// 実データから R32 を解決（左右16ずつ）。ブラケット最適化とトーナメント表で共用。
+function resolveLiveR32(tour) {
+  var groups = (tour && tour.groups) || {}, ko = (tour && tour.ko) || {};
+  var gl = deriveGlFromTour(groups);
+  var tp = (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : deriveTpProvisional(groups);
+  var mk = function (arr) { return arr.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, gl, tp); }) }; }); };
+  return { leftRes: mk(LR32), rightRes: mk(RR32) };
+}
+
+// あるメンバーが「最高/最低ポイント」になる決勝T結果(simKo)を木DPで算出。
+// 各チームが進んだラウンドでの得点(calcScore準拠/R32定数分は最適化に無関係なので省略)を、
+// 単純トーナメント木上で最大化(または最小化)する。
+function optimizeBracket(member, leftRes, rightRes, groups, maximize) {
+  try {
+    var teams = [];
+    (leftRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { teams.push(t); }); });
+    (rightRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { teams.push(t); }); });
+    if (teams.length !== 32) return null;
+    // メンバーの予想(gl上位2)の得点情報
+    var info = {};
+    Object.keys(member.gl || {}).forEach(function (g) {
+      ((member.gl[g]) || []).slice(0, 2).forEach(function (tn, i) {
+        if (!tn) return; var t = ft(tn); if (!t) return;
+        var dk = (member.des && member.des.A === tn) ? "A" : (member.des && member.des.B === tn) ? "B" : (member.des && member.des.C === tn) ? "C" : null;
+        var rb = 1, st = groups && groups[g];
+        if (st && st.length) { var ai = st.findIndex(function (r) { return r && r.n === tn; }); var played = st.some(function (r) { return (r.mp || 0) > 0; }); if (played && ai === i && ai <= 1) rb = RANK_BONUS[ai]; }
+        info[tn] = { b: bsc(t.o), dm: dk ? DES[dk].m : 1, dk: dk, rb: rb };
+      });
+    });
+    // level: 0=R32敗退,1=R16到達,2=QF,3=SF,4=決勝(準優勝),5=優勝。R32(.2)は定数のため省略。
+    function pscore(t, level, isThird) {
+      var pi = t && info[t.n]; if (!pi) return 0;
+      var sum = (level >= 1 ? SM.r16 : 0) + (level >= 2 ? SM.qf : 0) + (level >= 3 ? SM.sf : 0) + (level >= 4 ? SM.final : 0) + (level >= 5 ? SM.champ : 0) + (isThird ? SM.third : 0);
+      var fp = pi.b * sum * pi.dm;
+      if (pi.dk && level >= 4) fp *= DES[pi.dk].fb;
+      if (pi.dk && level >= 5) fp *= DES[pi.dk].cb;
+      return fp * pi.rb;
+    }
+    var better = maximize ? function (a, b) { return a > b; } : function (a, b) { return a < b; };
+    var loserLevel = { 4: 1, 8: 2, 16: 3, 32: 4 }; // node size → 敗者の到達level
+    function dp(lo, hi) {
+      var size = hi - lo;
+      if (size === 2) { var s = {}; s[lo] = pscore(teams[lo + 1], 0, false); s[lo + 1] = pscore(teams[lo], 0, false); return { score: s, winners: [lo, lo + 1], size: 2 }; }
+      var mid = (lo + hi) / 2, L = dp(lo, mid), R = dp(mid, hi), ll = loserLevel[size];
+      function bestLoser(sub) { var bi = null, bv = null; sub.winners.forEach(function (x) { var v = sub.score[x] + pscore(teams[x], ll, false); if (bv === null || better(v, bv)) { bv = v; bi = x; } }); return { idx: bi, val: bv }; }
+      var fromR = bestLoser(R), fromL = bestLoser(L), s = {}, choice = {};
+      L.winners.forEach(function (w) { s[w] = L.score[w] + fromR.val; choice[w] = { loser: fromR.idx, side: "L" }; });
+      R.winners.forEach(function (w) { s[w] = R.score[w] + fromL.val; choice[w] = { loser: fromL.idx, side: "R" }; });
+      return { score: s, winners: L.winners.concat(R.winners), choice: choice, L: L, R: R, size: size };
+    }
+    var root = dp(0, 32), champ = null, cv = null;
+    root.winners.forEach(function (w) { var v = root.score[w] + pscore(teams[w], 5, false); if (cv === null || better(v, cv)) { cv = v; champ = w; } });
+    var winBySize = { 2: [], 4: [], 8: [], 16: [], 32: [] }, sfLosers = [];
+    (function rec(node, w) {
+      winBySize[node.size].push(w);
+      if (node.size === 2) return;
+      var ch = node.choice[w], loser = ch.loser;
+      if (node.size === 16) sfLosers.push(loser);
+      if (ch.side === "L") { rec(node.L, w); rec(node.R, loser); } else { rec(node.R, w); rec(node.L, loser); }
+    })(root, champ);
+    var nm = function (i) { return teams[i] && teams[i].n; };
+    var third = null;
+    if (sfLosers.length) { var pk = null, pv = null; sfLosers.forEach(function (i) { var v = pscore(teams[i], 3, true) - pscore(teams[i], 3, false); if (pv === null || better(v, pv)) { pv = v; pk = i; } }); third = nm(pk); }
+    var sf = winBySize[16].map(nm).filter(Boolean);
+    return { r32: winBySize[2].map(nm).filter(Boolean), r16: winBySize[4].map(nm).filter(Boolean), qf: winBySize[8].map(nm).filter(Boolean), sf: sf, final: sf.slice(), champ: nm(champ), third: third };
+  } catch (e) { return null; }
+}
+
 function shuffle(arr){var a=arr.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=a[i];a[i]=a[j];a[j]=tmp;}return a;}
 function generateRandom(mode){var gl2={};Object.keys(GRP).forEach(function(g){var teams=GRP[g].slice();teams.sort(function(a,b){return a.o-b.o;});if(mode==="safe"){var second=shuffle(teams.slice(1,3))[0];gl2[g]=[teams[0].n,second.n];}else if(mode==="upset"){var weak=shuffle(teams.slice(1));gl2[g]=[weak[0].n,weak[1].n];}else{var rest=shuffle(teams.slice(1));gl2[g]=[teams[0].n,rest[0].n];}});var pool=[];Object.values(gl2).forEach(function(a){a.forEach(function(n){var t=ft(n);if(t)pool.push(t);});});var des2={A:null,B:null,C:null};if(pool.length>=3){pool.sort(function(a,b){return a.o-b.o;});var n=pool.length,picks;if(mode==="upset"){var hi=pool.slice(Math.floor(n/2));picks=shuffle(hi).slice(0,3);}else if(mode==="safe"){var lo=pool.slice(0,Math.max(6,Math.ceil(n/2)));picks=shuffle(lo).slice(0,3);}else{picks=shuffle(pool).slice(0,3);}des2.A=(picks[0]||{}).n||null;des2.B=(picks[1]||{}).n||null;des2.C=(picks[2]||{}).n||null;}return{gl:gl2,des:des2};}
 
@@ -376,6 +444,7 @@ export default function App() {
   useEffect(function () { if (!simTouched) setSimKo(koCopy(tour && tour.ko)); }, [tour, simTouched]);
   var simAdv = useCallback(function (stage, tn) { if (!tn) return; setSimTouched(true); setSimKo(function (prev) { try { var n = { r32: prev.r32.slice(), r16: prev.r16.slice(), qf: prev.qf.slice(), sf: prev.sf.slice(), final: prev.final.slice(), champ: prev.champ, third: prev.third }; if (stage === "champ" || stage === "third") { n[stage] = n[stage] === tn ? null : tn; return n; } var idx = n[stage].indexOf(tn); if (idx >= 0) { n[stage] = n[stage].filter(function (t) { return t !== tn; }); ["r32", "r16", "qf", "sf", "final"].forEach(function (s, si, arr) { if (si > arr.indexOf(stage)) n[s] = n[s].filter(function (t) { return t !== tn; }); }); if (n.champ === tn) n.champ = null; if (n.third === tn) n.third = null; } else { n[stage] = n[stage].concat(tn); } return n; } catch (e) { return prev; } }); }, []);
   var resetSim = useCallback(function () { setSimKo(koCopy(tour && tour.ko)); setSimTouched(false); }, [tour]);
+  var applySim = useCallback(function (ko) { if (!ko) return; setSimKo(koCopy(ko)); setSimTouched(true); }, []); // 最高/最低ポイントの試算結果を一括反映
   // シミュレーション結果をスコア用ko(到達ステージ意味)へ変換。ブラケットのko[stage]=「そのラウンドの勝者」なので1段ずらす。
   var simScoringKo = useMemo(function () {
     var groups = (tour && tour.groups) || {}, part = [];
@@ -515,7 +584,7 @@ export default function App() {
               adv={adv} ctx={ctx} score={score} tour={tour} liveStarted={liveStarted} fxByTeam={fxByTeam}
             />
           )}
-          {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} scoringKo={simScoringKo} simActive={simTouched} simKo={simKo} simAdv={simAdv} resetSim={resetSim} />}
+          {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} scoringKo={simScoringKo} simActive={simTouched} simKo={simKo} simAdv={simAdv} resetSim={resetSim} applySim={applySim} />}
           {tab === "live" && <LiveTab tour={tour} liveStarted={liveStarted} />}
           {adminOpen && <AdminPanel tour={tour} setTour={setTour} close={function () { setAdminOpen(false); }} />}
           {rulesOpen && (
@@ -974,7 +1043,7 @@ function SaveBar({ saveStatus, savedAt, saveNow, glComplete, score }) {
 // ═══════════════════════════════════════════════════════════
 // Results Tab
 // ═══════════════════════════════════════════════════════════
-function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, simKo, simAdv, resetSim }) {
+function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, simKo, simAdv, resetSim, applySim }) {
   var [list, setList] = useState([]);
   var [loading, setLoading] = useState(true);
   var [err, setErr] = useState("");
@@ -997,6 +1066,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
   var koForScore = scoringKo || provisionalKo(tour);
   var groupsForScore = (tour && tour.groups) || {};
   var thirdSet = thirdSetOf(groupsForScore); // 3位通過判定用（実グループ結果ベース）
+  var liveR32 = useMemo(function () { return resolveLiveR32(tour); }, [tour]); // 最高/最低ポイント試算のR32解決
 
   var rows = useMemo(function () {
     var actualR32 = koForScore.r32 || []; // 暫定R32（試合消化グループの上位2）
@@ -1215,6 +1285,16 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* トーナメント試算: この人が最高／最低になる勝ち上がり */}
+                  <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: $.dim, fontWeight: 700 }}>決勝T試算:</span>
+                    <button onClick={function (e) { e.stopPropagation(); var ko = optimizeBracket(r, liveR32.leftRes, liveR32.rightRes, groupsForScore, true); if (ko && applySim) applySim(ko); }}
+                      style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: "1px solid " + $.pitchL + "70", background: "rgba(34,197,94,.10)", color: $.pitchL }}>🔼 この人が最高得点</button>
+                    <button onClick={function (e) { e.stopPropagation(); var ko = optimizeBracket(r, liveR32.leftRes, liveR32.rightRes, groupsForScore, false); if (ko && applySim) applySim(ko); }}
+                      style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: "1px solid " + $.red + "70", background: "rgba(248,113,113,.10)", color: $.redL }}>🔽 この人が最低得点</button>
+                    <span style={{ fontSize: 9, color: $.dim }}>全試合終了時にこの人が最高/最低になる勝ち上がり。決勝T表と全員のスコアに反映（🔄で戻す）</span>
                   </div>
 
                   {/* 得点内訳 */}
