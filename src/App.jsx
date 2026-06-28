@@ -1070,6 +1070,30 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
   var groupsForScore = (tour && tour.groups) || {};
   var thirdSet = thirdSetOf(groupsForScore); // 3位通過判定用（実グループ結果ベース）
   var liveR32 = useMemo(function () { return resolveLiveR32(tour); }, [tour]); // 最高/最低ポイント試算のR32解決
+  // まだ可能性のある順位（最高=自分が最も伸びる勝ち上がり時の順位 / 最低=最も伸びない時の順位）
+  var rankRange = useMemo(function () {
+    try {
+      var R = liveR32, G = groupsForScore, mem = (list || []).filter(function (m) { return m && m.gl; });
+      var nteams = (R.leftRes || []).concat(R.rightRes || []).reduce(function (a, m) { return a + (m.teams || []).length; }, 0);
+      if (nteams !== 32 || mem.length < 2) return {};
+      function toScoring(sk) { var part = []; Object.keys(GRP).forEach(function (g) { var a = G[g] || []; if (a.some(function (t) { return (t.mp || 0) > 0; })) a.slice(0, 2).forEach(function (t) { if (t && t.n) part.push(t.n); }); }); return { r32: part, r16: sk.r32 || [], qf: sk.r16 || [], sf: sk.qf || [], final: sk.sf || [], champ: sk.champ || null, third: sk.third || null }; }
+      var out = {};
+      mem.forEach(function (M) {
+        var koMax = optimizeBracket(M, R.leftRes, R.rightRes, G, true), koMin = optimizeBracket(M, R.leftRes, R.rightRes, G, false);
+        if (!koMax || !koMin) return;
+        var skMax = toScoring(koMax), skMin = toScoring(koMin);
+        var mMax = calcScore(M.gl, M.des, skMax, G).total, mMin = calcScore(M.gl, M.des, skMin, G).total;
+        var best = 1, worst = 1;
+        mem.forEach(function (O) {
+          if (O.name === M.name) return;
+          if (calcScore(O.gl, O.des, skMax, G).total > mMax) best++;
+          if (calcScore(O.gl, O.des, skMin, G).total > mMin) worst++;
+        });
+        out[M.name] = { best: best, worst: worst };
+      });
+      return out;
+    } catch (e) { return {}; }
+  }, [list, liveR32, groupsForScore]);
 
   var rows = useMemo(function () {
     var actualR32 = koForScore.r32 || []; // 暫定R32（試合消化グループの上位2）
@@ -1164,7 +1188,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
 
   return (
     <div className="fade-in">
-      <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）")} />
+      <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）") + "　/　得点の左「◯-◯位」＝まだ可能性のある最終順位"} />
 
       {simActive && (
         <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "rgba(168,85,247,.12)", border: "1px solid " + $.purple + "55", color: $.purpleL, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1185,6 +1209,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
           var isMe = r.name === myName_;
           var isOpen = open === r.name;
           var h = memberHits(r);
+          var rr = rankRange[r.name];
           return (
             <div
               key={r.name}
@@ -1223,6 +1248,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                     );
                   })}
                 </div>
+                {rr && <span className="lb-range" title="まだ可能性のある最終順位（最高〜最低）" style={{ fontSize: 9, color: $.dim, flexShrink: 0, whiteSpace: "nowrap" }}>{rr.best === rr.worst ? rr.best + "位" : rr.best + "-" + rr.worst + "位"}</span>}
                 <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", alignItems: "baseline", gap: 3, flexShrink: 0 }}>
                   <div style={{ fontFamily: fontH, fontSize: 17, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
                   <div style={{ fontSize: 10, color: $.txt2 }}>点</div>
