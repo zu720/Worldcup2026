@@ -337,8 +337,9 @@ function resolveLiveR32(tour) {
 // あるメンバーが「最高/最低ポイント」になる決勝T結果(simKo)を木DPで算出。
 // 各チームが進んだラウンドでの得点(calcScore準拠/R32定数分は最適化に無関係なので省略)を、
 // 単純トーナメント木上で最大化(または最小化)する。
-function optimizeBracket(member, leftRes, rightRes, groups, maximize) {
+function optimizeBracket(member, leftRes, rightRes, groups, maximize, ko) {
   try {
+    var dec = ko || {};
     var teams = [];
     (leftRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { teams.push(t); }); });
     (rightRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { teams.push(t); }); });
@@ -365,18 +366,23 @@ function optimizeBracket(member, leftRes, rightRes, groups, maximize) {
     }
     var better = maximize ? function (a, b) { return a > b; } : function (a, b) { return a < b; };
     var loserLevel = { 4: 1, 8: 2, 16: 3, 32: 4 }; // node size → 敗者の到達level
+    // 既に実施済みのKO試合は結果を固定（size→そのラウンドの勝者集合）
+    function decArr(size) { return size === 2 ? (dec.r32 || []) : size === 4 ? (dec.r16 || []) : size === 8 ? (dec.qf || []) : size === 16 ? (dec.sf || []) : []; }
+    function forcedWinner(lo, hi, size) { var arr = decArr(size); if (!arr.length) return null; for (var i = lo; i < hi; i++) { if (teams[i] && arr.indexOf(teams[i].n) >= 0) return i; } return null; }
     function dp(lo, hi) {
       var size = hi - lo;
-      if (size === 2) { var s = {}; s[lo] = pscore(teams[lo + 1], 0, false); s[lo + 1] = pscore(teams[lo], 0, false); return { score: s, winners: [lo, lo + 1], size: 2 }; }
+      if (size === 2) { var s = {}; s[lo] = pscore(teams[lo + 1], 0, false); s[lo + 1] = pscore(teams[lo], 0, false); var f2 = forcedWinner(lo, hi, 2); return { score: s, winners: f2 != null ? [f2] : [lo, lo + 1], size: 2 }; }
       var mid = (lo + hi) / 2, L = dp(lo, mid), R = dp(mid, hi), ll = loserLevel[size];
       function bestLoser(sub) { var bi = null, bv = null; sub.winners.forEach(function (x) { var v = sub.score[x] + pscore(teams[x], ll, false); if (bv === null || better(v, bv)) { bv = v; bi = x; } }); return { idx: bi, val: bv }; }
       var fromR = bestLoser(R), fromL = bestLoser(L), s = {}, choice = {};
       L.winners.forEach(function (w) { s[w] = L.score[w] + fromR.val; choice[w] = { loser: fromR.idx, side: "L" }; });
       R.winners.forEach(function (w) { s[w] = R.score[w] + fromL.val; choice[w] = { loser: fromL.idx, side: "R" }; });
-      return { score: s, winners: L.winners.concat(R.winners), choice: choice, L: L, R: R, size: size };
+      var winners = L.winners.concat(R.winners), f = forcedWinner(lo, hi, size); if (f != null && s[f] !== undefined) winners = [f]; // 整合しない結果は無視
+      return { score: s, winners: winners, choice: choice, L: L, R: R, size: size };
     }
-    var root = dp(0, 32), champ = null, cv = null;
-    root.winners.forEach(function (w) { var v = root.score[w] + pscore(teams[w], 5, false); if (cv === null || better(v, cv)) { cv = v; champ = w; } });
+    var root = dp(0, 32), champ = null, cv = null, fc = null;
+    if (dec.champ) { for (var ci = 0; ci < 32; ci++) { if (teams[ci] && teams[ci].n === dec.champ) { fc = ci; break; } } }
+    (fc != null && root.score[fc] !== undefined ? [fc] : root.winners).forEach(function (w) { var v = root.score[w] + pscore(teams[w], 5, false); if (cv === null || better(v, cv)) { cv = v; champ = w; } });
     var winBySize = { 2: [], 4: [], 8: [], 16: [], 32: [] }, sfLosers = [];
     (function rec(node, w) {
       winBySize[node.size].push(w);
@@ -387,7 +393,8 @@ function optimizeBracket(member, leftRes, rightRes, groups, maximize) {
     })(root, champ);
     var nm = function (i) { return teams[i] && teams[i].n; };
     var third = null;
-    if (sfLosers.length) { var pk = null, pv = null; sfLosers.forEach(function (i) { var v = pscore(teams[i], 3, true) - pscore(teams[i], 3, false); if (pv === null || better(v, pv)) { pv = v; pk = i; } }); third = nm(pk); }
+    if (dec.third) third = dec.third; // 3位決定戦が確定済みならそれを使用
+    else if (sfLosers.length) { var pk = null, pv = null; sfLosers.forEach(function (i) { var v = pscore(teams[i], 3, true) - pscore(teams[i], 3, false); if (pv === null || better(v, pv)) { pv = v; pk = i; } }); third = nm(pk); }
     var sf = winBySize[16].map(nm).filter(Boolean);
     return { r32: winBySize[2].map(nm).filter(Boolean), r16: winBySize[4].map(nm).filter(Boolean), qf: winBySize[8].map(nm).filter(Boolean), sf: sf, final: sf.slice(), champ: nm(champ), third: third };
   } catch (e) { return null; }
@@ -1079,7 +1086,8 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
       function toScoring(sk) { var part = []; Object.keys(GRP).forEach(function (g) { var a = G[g] || []; if (a.some(function (t) { return (t.mp || 0) > 0; })) a.slice(0, 2).forEach(function (t) { if (t && t.n) part.push(t.n); }); }); return { r32: part, r16: sk.r32 || [], qf: sk.r16 || [], sf: sk.qf || [], final: sk.sf || [], champ: sk.champ || null, third: sk.third || null }; }
       var out = {};
       mem.forEach(function (M) {
-        var koMax = optimizeBracket(M, R.leftRes, R.rightRes, G, true), koMin = optimizeBracket(M, R.leftRes, R.rightRes, G, false);
+        var actualKo = (tour && tour.ko) || {};
+        var koMax = optimizeBracket(M, R.leftRes, R.rightRes, G, true, actualKo), koMin = optimizeBracket(M, R.leftRes, R.rightRes, G, false, actualKo);
         if (!koMax || !koMin) return;
         var skMax = toScoring(koMax), skMin = toScoring(koMin);
         var mMax = calcScore(M.gl, M.des, skMax, G).total, mMin = calcScore(M.gl, M.des, skMin, G).total;
@@ -1304,9 +1312,9 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                   {/* トーナメント試算: この人が最高／最低になる勝ち上がり */}
                   <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                     <span style={{ fontSize: 10, color: $.dim, fontWeight: 700 }}>決勝T試算:</span>
-                    <button onClick={function (e) { e.stopPropagation(); var ko = optimizeBracket(r, liveR32.leftRes, liveR32.rightRes, groupsForScore, true); if (ko && applySim) applySim(ko); }}
+                    <button onClick={function (e) { e.stopPropagation(); var ko = optimizeBracket(r, liveR32.leftRes, liveR32.rightRes, groupsForScore, true, (tour && tour.ko) || {}); if (ko && applySim) applySim(ko); }}
                       style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: "1px solid " + $.pitchL + "70", background: "rgba(34,197,94,.10)", color: $.pitchL }}>🔼 この人が最高得点</button>
-                    <button onClick={function (e) { e.stopPropagation(); var ko = optimizeBracket(r, liveR32.leftRes, liveR32.rightRes, groupsForScore, false); if (ko && applySim) applySim(ko); }}
+                    <button onClick={function (e) { e.stopPropagation(); var ko = optimizeBracket(r, liveR32.leftRes, liveR32.rightRes, groupsForScore, false, (tour && tour.ko) || {}); if (ko && applySim) applySim(ko); }}
                       style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: "1px solid " + $.red + "70", background: "rgba(248,113,113,.10)", color: $.redL }}>🔽 この人が最低得点</button>
                     <span style={{ fontSize: 9, color: $.dim }}>全試合終了時にこの人が最高/最低になる勝ち上がり。決勝T表と全員のスコアに反映（🔄で戻す）</span>
                   </div>
@@ -1686,10 +1694,15 @@ function AdminPanel({ tour, setTour, close }) {
   }
   function toggleStage(stage, n) {
     setKoL(function (p) {
-      var arr = (p[stage] || []).slice();
-      var i = arr.indexOf(n);
-      if (i >= 0) arr.splice(i, 1); else arr.push(n);
-      return Object.assign({}, p, { [stage]: arr });
+      var nx = { r32: (p.r32 || []).slice(), r16: (p.r16 || []).slice(), qf: (p.qf || []).slice(), sf: (p.sf || []).slice(), final: (p.final || []).slice(), champ: p.champ, third: p.third, matches: p.matches, teamCards: p.teamCards };
+      var order = ["r32", "r16", "qf", "sf"];
+      if (nx[stage].indexOf(n) >= 0) { // 除外 → それ以降のラウンドからも除去
+        order.slice(order.indexOf(stage)).forEach(function (s) { nx[s] = nx[s].filter(function (t) { return t !== n; }); });
+        if (nx.champ === n) nx.champ = null;
+        if (nx.third === n) nx.third = null;
+      } else { nx[stage] = nx[stage].concat(n); }
+      nx.final = nx.sf.slice(); // 決勝進出＝準決勝の勝者
+      return nx;
     });
   }
   function setSingle(stage, n) {
@@ -1699,8 +1712,11 @@ function AdminPanel({ tour, setTour, close }) {
     setSaving(true);
     setMsg("");
     try {
-      await saveTournament({ phase: phase, vote_locked: voteLocked, ko: ko });
-      setTour(function (t) { return Object.assign({}, t, { phase: phase, vote_locked: voteLocked, ko: ko }); });
+      // 決勝進出=準決勝勝者。試合データ・カードは最新を維持。
+      var newKo = Object.assign({}, ko, { final: (ko.sf || []).slice() });
+      if (tour && tour.ko) { newKo.matches = tour.ko.matches; newKo.teamCards = tour.ko.teamCards; }
+      await saveTournament({ phase: phase, vote_locked: voteLocked, ko: newKo });
+      setTour(function (t) { return Object.assign({}, t, { phase: phase, vote_locked: voteLocked, ko: newKo }); });
       setMsg("✓ 保存しました");
       setTimeout(function () { setMsg(""); }, 2000);
     } catch (e) {
@@ -1778,12 +1794,18 @@ function AdminPanel({ tour, setTour, close }) {
   }
 
   var STAGES = [
-    { k: "r32", l: "ベスト32進出（16チーム想定）" },
-    { k: "r16", l: "ベスト16進出（8チーム）" },
-    { k: "qf",  l: "準々決勝進出（4チーム）" },
-    { k: "sf",  l: "準決勝進出（2チーム）" },
-    { k: "final", l: "決勝進出（2チーム）" },
+    { k: "r32", l: "ベスト16進出（R32の勝者・16）" },
+    { k: "r16", l: "ベスト8進出（R16の勝者・8）" },
+    { k: "qf",  l: "ベスト4進出（準々決勝の勝者・4）" },
+    { k: "sf",  l: "決勝進出（準決勝の勝者・2）" },
   ];
+  // 各ラウンドの選択候補（前ラウンドの勝者のみ。R32は実際の進出32チーム）
+  var koR32 = useMemo(function () {
+    var r = resolveLiveR32(tour), pool = [];
+    (r.leftRes || []).concat(r.rightRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { if (t && t.n && !t.tbd && pool.indexOf(t.n) < 0) pool.push(t.n); }); });
+    return pool;
+  }, [tour]);
+  function koPool(stage) { return stage === "r32" ? koR32 : stage === "r16" ? (ko.r32 || []) : stage === "qf" ? (ko.r16 || []) : stage === "sf" ? (ko.qf || []) : []; }
   var PHASES = [
     { k: "pre", l: "開幕前" },
     { k: "groups", l: "グループ" },
@@ -1836,13 +1858,6 @@ function AdminPanel({ tour, setTour, close }) {
               </label>
             </div>
 
-            {/* 試合結果 手動入力（グループ別リストで一括編集） */}
-            <MatchEditor tour={tour} setTour={setTour} />
-
-            {/* チーム別カード集計（フェアプレー）— チーム毎の累計枚数を直接編集 */}
-            <CardEditor tour={tour} setTour={setTour} />
-
-
             {/* データ同期 */}
             <div style={{ marginBottom: 16, padding: 12, background: "rgba(96,165,250,.06)", borderRadius: 8, border: "1px solid " + $.blue + "40" }}>
               <div style={{ fontSize: 12, color: $.blueL || $.blue, fontWeight: 700, marginBottom: 4 }}>🔄 データ同期</div>
@@ -1857,30 +1872,36 @@ function AdminPanel({ tour, setTour, close }) {
               {syncMsg && <div style={{ fontSize: 11, marginTop: 6, color: syncMsg.startsWith("✓") ? $.pitchL : syncMsg.startsWith("✕") ? $.redL : $.dim }}>{syncMsg}</div>}
             </div>
 
-            {/* KO stages */}
+            {/* 決勝トーナメント結果入力（各ラウンドの勝者を選択／前ラウンドの勝者のみ候補） */}
+            <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, margin: "4px 0 8px" }}>🏆 決勝トーナメント結果</div>
             {STAGES.map(function (s) {
               var picked = ko[s.k] || [];
+              var pool = koPool(s.k);
               return (
                 <div key={s.k} style={{ marginBottom: 12, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
                   <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 6 }}>{s.l}　<span style={{ color: $.dim, fontWeight: 400 }}>選択中: {picked.length}</span></div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {AT.map(function (t) {
-                      var on = picked.indexOf(t.n) >= 0;
-                      return <button key={t.n} onClick={function () { toggleStage(s.k, t.n); }} style={{ fontSize: 10, padding: "3px 7px", borderRadius: 4, border: "1px solid " + (on ? $.pitchL : $.border), background: on ? "rgba(34,197,94,.18)" : "transparent", color: on ? $.pitchL : $.txt2, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}><Fl n={t.n} s={10} />{t.n}</button>;
-                    })}
-                  </div>
+                  {pool.length === 0 ? (
+                    <div style={{ fontSize: 11, color: $.dim }}>{s.k === "r32" ? "グループ順位が未確定です" : "前のラウンドの勝者を先に選択してください"}</div>
+                  ) : (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {pool.map(function (nm) {
+                        var on = picked.indexOf(nm) >= 0;
+                        return <button key={nm} onClick={function () { toggleStage(s.k, nm); }} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 5, border: "1px solid " + (on ? $.pitchL : $.border), background: on ? "rgba(34,197,94,.18)" : "transparent", color: on ? $.pitchL : $.txt2, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}><Fl n={nm} s={11} />{nm}</button>;
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}
 
             {/* champ + third */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-              {[{ k: "champ", l: "👑 優勝", pool: ko.final }, { k: "third", l: "🥉 3位", pool: ko.qf }].map(function (s) {
+              {[{ k: "champ", l: "👑 優勝", pool: ko.sf }, { k: "third", l: "🥉 3位", pool: (ko.qf || []).filter(function (n) { return (ko.sf || []).indexOf(n) < 0; }) }].map(function (s) {
                 return (
                   <div key={s.k} style={{ padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
                     <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 6 }}>{s.l}</div>
                     {(!s.pool || s.pool.length === 0) ? (
-                      <div style={{ fontSize: 11, color: $.dim }}>{s.k === "champ" ? "決勝進出を先に設定" : "準々決勝進出を先に設定"}</div>
+                      <div style={{ fontSize: 11, color: $.dim }}>{s.k === "champ" ? "決勝進出（準決勝の勝者）を先に設定" : "準々決勝・準決勝の勝者を先に設定"}</div>
                     ) : (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                         {s.pool.map(function (n) {
