@@ -165,10 +165,34 @@ var OFFICIAL_GROUP_RESULTS = [
   ["イングランド","パナマ",2,0,"2026-06-27"],["クロアチア","ガーナ",2,1,"2026-06-27"],
 ];
 
-// 公式ノックアウト結果（確定分のみ。各ラウンドの「勝者」を列挙）。
-// 2026-06-28時点: R32第1試合 カナダ 1-0 南アフリカ（カナダがR16進出）。
-// 試合が進むたびに追記。読み込み時は和集合で反映され、手動入力を消さない。
-var OFFICIAL_KO_RESULTS = { r32: ["カナダ"], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
+// ラウンド番号 ⇄ ステージ（決勝T試合の round に使用。グループ戦は1〜3）。
+var KO_RS = { 4: "r32", 5: "r16", 6: "qf", 7: "sf", 8: "final" };
+var KO_SR = { r32: 4, r16: 5, qf: 6, sf: 7, final: 8 };
+// 公式ノックアウト結果（確定＝公式発表済みの試合のみ）。スコア付きで列挙。
+// これらは管理画面でロックされ、クリック/スコア編集で動かせない（誤操作防止）。
+// 2026-06-28時点: R32第1試合 南アフリカ 0-1 カナダ（カナダがR16進出）。試合が進むたびに追記。
+var OFFICIAL_KO_RESULTS = [
+  { round: 4, home: "南アフリカ", away: "カナダ", hs: 0, as: 1, date: "2026-06-28" },
+];
+// ロック対象（ステージ→確定済みチーム集合）。OFFICIAL_KO_RESULTSから生成。
+var KO_LOCKED = (function () { var o = {}; OFFICIAL_KO_RESULTS.forEach(function (r) { var st = KO_RS[r.round]; if (!st) return; (o[st] = o[st] || {})[r.home] = 1; o[st][r.away] = 1; }); return o; })();
+function koLocked(stage, tn) { return !!(KO_LOCKED[stage] && KO_LOCKED[stage][tn]); }
+// ko.matches(round>=4) から決勝Tスコアの索引を作る。キー = stage + ":" + チーム名の組(順不同)。
+function buildKoScores(ko) {
+  var map = {};
+  (((ko && ko.matches) || [])).forEach(function (m) {
+    if (!m || m.round == null || m.round < 4 || m.hs == null || m.as == null) return;
+    var st = KO_RS[m.round]; if (!st) return;
+    map[st + ":" + [m.home, m.away].slice().sort().join("|")] = { home: m.home, away: m.away, hs: m.hs, as: m.as, official: !!m.official };
+  });
+  return map;
+}
+// 指定ステージ・2チームのスコアを取得（aの得点/bの得点）。無ければnull。
+function koGoals(scores, stage, a, b) {
+  if (!scores || !a || !b) return null;
+  var s = scores[stage + ":" + [a, b].slice().sort().join("|")]; if (!s) return null;
+  return { a: s.home === a ? s.hs : s.as, b: s.home === a ? s.as : s.hs, official: s.official };
+}
 
 // ═══════════════════════════════════════════════════════════
 // Helpers
@@ -1738,7 +1762,7 @@ function CardEditor({ tour, setTour }) {
 }
 // 管理画面の決勝T入力用ブラケット。ランキング画面のブラケット(BView)を流用し、
 // クリック(adv)で勝者を勝ち上がらせる。R32の対戦は確定グループ順位から常に算出（provisional）。
-function AdminKoBracket({ tour, ko, adv }) {
+function AdminKoBracket({ tour, ko, adv, setScore }) {
   var groups = (tour && tour.groups) || {};
   var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
   var liveTp = useMemo(function () { return deriveTpProvisional(groups); }, [groups]);
@@ -1746,13 +1770,56 @@ function AdminKoBracket({ tour, ko, adv }) {
   var rightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
   var leftD = useMemo(function () { return deriveRounds(leftRes, ko); }, [leftRes, ko]);
   var rightD = useMemo(function () { return deriveRounds(rightRes, ko); }, [rightRes, ko]);
+  var koScores = useMemo(function () { return buildKoScores(ko); }, [ko]);
   var noop = function () {};
-  var ctx = { ko: ko, des: { A: null, B: null, C: null }, adv: adv, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true };
+  var ctx = { ko: ko, des: { A: null, B: null, C: null }, adv: adv, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true, koScores: koScores };
+  // 各ラウンドの「対戦カード（両者解決済み）」をスコア入力用に抽出
+  var koQf = ko.qf || [];
+  var pickSf = function (rd) { return (rd.qf || []).map(function (q) { if (!q) return null; var ts = [q.t1, q.t2].filter(function (x) { return x && x.n; }); return ts.find(function (t) { return koQf.indexOf(t.n) >= 0; }) || null; }).filter(Boolean); };
+  var rounds = [
+    { stage: "r32", label: "ラウンド32", pairs: leftRes.concat(rightRes).map(function (m) { return [m.teams[0], m.teams[1]]; }) },
+    { stage: "r16", label: "ラウンド16", pairs: (leftD.r16 || []).concat(rightD.r16 || []).map(function (m) { return [m.t1, m.t2]; }) },
+    { stage: "qf", label: "準々決勝", pairs: (leftD.qf || []).concat(rightD.qf || []).map(function (m) { return [m.t1, m.t2]; }) },
+    { stage: "sf", label: "準決勝", pairs: [pickSf(leftD), pickSf(rightD)].map(function (a) { return [a[0], a[1]]; }) },
+    { stage: "final", label: "決勝", pairs: [[{ n: (ko.sf || [])[0] }, { n: (ko.sf || [])[1] }]] },
+  ];
   if (Object.keys(groups).length === 0) return <div style={{ fontSize: 11, color: $.dim, padding: "8px 0" }}>先に「📥 公式結果を読み込む」でグループ結果を反映してください（R32の組合せが自動で決まります）。</div>;
   return (
     <div style={{ marginBottom: 12 }}>
       <BView leftRes={leftRes} rightRes={rightRes} leftD={leftD} rightD={rightD} ko={ko} ctx={ctx} />
       {ko.sf && ko.sf.length >= 2 && <ThirdP ko={ko} adv={adv} />}
+      {/* スコア入力（両者決まったカードのみ。両方入れると勝者が自動で勝ち上がり） */}
+      <div style={{ marginTop: 12, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
+        <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 2 }}>✏️ 決勝T スコア入力</div>
+        <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>両チームのスコアを入れると勝者が自動で次へ進みます（PK等の引き分けは上のブラケットで勝者をクリック）。🔒＝確定済みで変更不可。</div>
+        {rounds.map(function (rd) {
+          var pairs = (rd.pairs || []).filter(function (p) { return p[0] && p[0].n && p[1] && p[1].n; });
+          if (!pairs.length) return null;
+          return (
+            <div key={rd.stage} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: $.dim, marginBottom: 3 }}>{rd.label}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {pairs.map(function (p, i) { return <KoScoreRow key={rd.stage + i} stage={rd.stage} a={p[0].n} b={p[1].n} scores={koScores} setScore={setScore} />; })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+// 1カードのスコア入力行。a/b はチーム名。確定済み(公式)は読み取り専用＋🔒。
+function KoScoreRow({ stage, a, b, scores, setScore }) {
+  var sc = koGoals(scores, stage, a, b);
+  var locked = !!(sc && sc.official) || koLocked(stage, a) || koLocked(stage, b);
+  var inp = { width: 34, padding: "3px 2px", borderRadius: 5, background: locked ? "rgba(255,255,255,.04)" : "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, textAlign: "center" };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+      <span style={{ flex: 1, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}><Fl n={a} s={13} />{a}</span>
+      <input type="number" min="0" disabled={locked} value={sc && sc.a != null ? sc.a : ""} onChange={function (e) { setScore(stage, a, b, e.target.value); }} style={inp} />
+      <span style={{ color: $.dim }}>-</span>
+      <input type="number" min="0" disabled={locked} value={sc && sc.b != null ? sc.b : ""} onChange={function (e) { setScore(stage, b, a, e.target.value); }} style={inp} />
+      <span style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", display: "inline-flex", alignItems: "center", gap: 3 }}>{b}<Fl n={b} s={13} />{locked && <span title="確定済み" style={{ marginLeft: 2 }}>🔒</span>}</span>
     </div>
   );
 }
@@ -1764,6 +1831,9 @@ function AdminPanel({ tour, setTour, close }) {
   var [phase, setPhase] = useState((tour && tour.phase) || "pre");
   var [voteLocked, setVoteLocked] = useState((tour && tour.vote_locked) || false);
   var [ko, setKoL] = useState(JSON.parse(JSON.stringify((tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null })));
+  var [koTouched, setKoTouched] = useState(false);
+  // 未編集なら最新の実結果(tour.ko)に追従（公式読込やCardEditor更新を取りこぼさない）。編集開始後は固定。
+  useEffect(function () { if (!koTouched && tour && tour.ko) setKoL(JSON.parse(JSON.stringify(tour.ko))); }, [tour, koTouched]);
   var [msg, setMsg] = useState("");
   var [saving, setSaving] = useState(false);
   var [syncMsg, setSyncMsg] = useState("");
@@ -1777,6 +1847,10 @@ function AdminPanel({ tour, setTour, close }) {
   // 国名クリックで stage(r32/r16/qf/sf/final/champ/third) に勝者を追加/除外する。
   function koAdv(stage, tn) {
     if (!tn) return;
+    // 確定済み(公式)の試合に絡むチームはロック。優勝は決勝が確定済みなら固定。
+    if (koLocked(stage, tn)) { setMsg("🔒 確定済みの結果は変更できません"); setTimeout(function () { setMsg(""); }, 1800); return; }
+    if (stage === "champ" && KO_LOCKED.final && KO_LOCKED.final[tn]) { setMsg("🔒 決勝は確定済みです"); setTimeout(function () { setMsg(""); }, 1800); return; }
+    setKoTouched(true);
     setKoL(function (prev) {
       try {
         var n = { r32: (prev.r32 || []).slice(), r16: (prev.r16 || []).slice(), qf: (prev.qf || []).slice(), sf: (prev.sf || []).slice(), final: (prev.final || []).slice(), champ: prev.champ, third: prev.third, matches: prev.matches, teamCards: prev.teamCards };
@@ -1792,15 +1866,54 @@ function AdminPanel({ tour, setTour, close }) {
       } catch (e) { return prev; }
     });
   }
+  // 決勝Tスコア入力。team の得点を更新→両者入力済みなら勝者を自動で勝ち上がらせる。
+  // スコアは ko.matches(round=4〜8)に保存。確定済み(公式)試合はロックして変更不可。
+  function setKoScore(stage, team, opp, valStr) {
+    if (!team || !opp) return;
+    if (koLocked(stage, team) || koLocked(stage, opp)) { setMsg("🔒 確定済みの結果は変更できません"); setTimeout(function () { setMsg(""); }, 1800); return; }
+    var round = KO_SR[stage]; if (!round) return;
+    var val = valStr === "" || valStr == null ? null : Math.max(0, parseInt(valStr, 10) || 0);
+    setKoTouched(true);
+    setKoL(function (prev) {
+      try {
+        var matches = ((prev.matches) || []).slice();
+        var idx = matches.findIndex(function (m) { return m && m.round === round && ((m.home === team && m.away === opp) || (m.home === opp && m.away === team)); });
+        var m = idx >= 0 ? Object.assign({}, matches[idx]) : { home: team, away: opp, round: round, manual: true, date: "" };
+        if (m.official) return prev; // 公式確定はロック
+        if (m.home === team) m.hs = val; else m.as = val;
+        m.status = (m.hs != null && m.as != null) ? "FT" : "";
+        if (idx >= 0) matches[idx] = m; else matches.push(m);
+        var n = { r32: (prev.r32 || []).slice(), r16: (prev.r16 || []).slice(), qf: (prev.qf || []).slice(), sf: (prev.sf || []).slice(), final: (prev.final || []).slice(), champ: prev.champ, third: prev.third, matches: matches, teamCards: prev.teamCards };
+        // 両者入力済み＆勝敗が付いていれば勝者を勝ち上がらせ、敗者を以降から外す
+        if (m.hs != null && m.as != null && m.hs !== m.as) {
+          var w = m.hs > m.as ? m.home : m.away, l = m.hs > m.as ? m.away : m.home;
+          var order = ["r32", "r16", "qf", "sf", "final"];
+          if (stage === "final") {
+            ["sf", "final"].forEach(function (k) { [m.home, m.away].forEach(function (t) { if (n[k].indexOf(t) < 0) n[k].push(t); }); });
+            n.champ = w;
+          } else {
+            if (n[stage].indexOf(w) < 0) n[stage].push(w);
+            order.slice(order.indexOf(stage)).forEach(function (s) { n[s] = n[s].filter(function (t) { return t !== l; }); });
+            if (n.champ === l) n.champ = null; if (n.third === l) n.third = null;
+          }
+        }
+        return n;
+      } catch (e) { return prev; }
+    });
+  }
   async function save() {
     setSaving(true);
     setMsg("");
     try {
-      // 決勝進出=準決勝勝者。試合データ・カードは最新を維持。
-      var newKo = Object.assign({}, ko, { final: (ko.sf || []).slice() });
-      if (tour && tour.ko) { newKo.matches = tour.ko.matches; newKo.teamCards = tour.ko.teamCards; }
+      // グループ試合は最新(tour)を、決勝T試合スコアはこの画面の編集分を採用してマージ。
+      var koMatches = ((ko && ko.matches) || []).filter(function (m) { return m && m.round >= 4; });
+      var grpMatches = ((tour && tour.ko && tour.ko.matches) || []).filter(function (m) { return !(m && m.round >= 4); });
+      var mergedMatches = dedupeMatches(grpMatches.concat(koMatches));
+      var newKo = Object.assign({}, ko, { final: (ko.sf || []).slice(), matches: mergedMatches });
+      if (tour && tour.ko) { newKo.teamCards = tour.ko.teamCards; }
       await saveTournament({ phase: phase, vote_locked: voteLocked, ko: newKo });
       setTour(function (t) { return Object.assign({}, t, { phase: phase, vote_locked: voteLocked, ko: newKo }); });
+      setKoTouched(false);
       setMsg("✓ 保存しました");
       setTimeout(function () { setMsg(""); }, 2000);
     } catch (e) {
@@ -1842,20 +1955,25 @@ function AdminPanel({ tour, setTour, close }) {
         if (ex) { if (ex.id) m.id = ex.id; if (ex.cards) m.cards = ex.cards; } // 既存のid・カードは維持
         map[matchKey(m)] = m;
       });
+      // 確定済みの決勝T試合（スコア付き・ロック対象）を ko.matches に登録
+      OFFICIAL_KO_RESULTS.forEach(function (r) {
+        var m = { home: r.home, away: r.away, hs: r.hs, as: r.as, round: r.round, status: "FT", manual: true, official: true, date: r.date || "" };
+        map[matchKey(m)] = m;
+      });
       var matches = Object.keys(map).map(function (k) { return map[k]; });
       var groups = computeGroups(matches, (tour && tour.ko && tour.ko.teamCards));
       var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
-      // 確定済みの決勝T結果を「和集合」で反映（既存の勝者・手動入力は消さない）
-      ["r32", "r16", "qf", "sf", "final"].forEach(function (s) {
-        var cur = (newKo[s] || []).slice();
-        (OFFICIAL_KO_RESULTS[s] || []).forEach(function (tn) { if (cur.indexOf(tn) < 0) cur.push(tn); });
-        newKo[s] = cur;
+      // 確定済みの決勝T結果から勝者を「和集合」で反映（既存の勝者・手動入力は消さない）
+      OFFICIAL_KO_RESULTS.forEach(function (r) {
+        var st = KO_RS[r.round]; if (!st) return;
+        var w = r.hs > r.as ? r.home : r.as > r.hs ? r.away : null; if (!w) return;
+        var add = function (k, tn) { var cur = (newKo[k] || []).slice(); if (cur.indexOf(tn) < 0) cur.push(tn); newKo[k] = cur; };
+        if (st === "final") { add("sf", r.home); add("sf", r.away); add("final", r.home); add("final", r.away); if (!newKo.champ) newKo.champ = w; }
+        else add(st, w);
       });
-      if (OFFICIAL_KO_RESULTS.champ && !newKo.champ) newKo.champ = OFFICIAL_KO_RESULTS.champ;
-      if (OFFICIAL_KO_RESULTS.third && !newKo.third) newKo.third = OFFICIAL_KO_RESULTS.third;
       await saveTournament({ phase: "r32", groups: groups, ko: newKo, last_api_update: (new Date()).toISOString() });
       setTour(function (t) { return Object.assign({}, t, { phase: "r32", groups: groups, ko: newKo, last_api_update: (new Date()).toISOString() }); });
-      setSyncMsg("✓ 公式結果(全72試合＋確定済みR32)を読み込みました。星取表・各組3位順位・R32組合せに反映。決勝Tは下のブラケットでクリック入力できます。");
+      setSyncMsg("✓ 公式結果(全72試合＋確定済みR32)を読み込みました。星取表・各組3位順位・R32組合せに反映。確定試合はロックされ、続きはブラケットで入力できます。");
     } catch (e) { setSyncMsg("✕ " + (e.message || e)); }
     setSyncing(false);
   }
@@ -1989,13 +2107,13 @@ function AdminPanel({ tour, setTour, close }) {
             {/* 決勝トーナメント結果入力（ブラケットで勝者をクリック → そのまま勝ち上がり） */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "4px 0 4px" }}>
               <div style={{ fontSize: 12, color: $.gold, fontWeight: 700 }}>🏆 決勝トーナメント結果</div>
-              <button onClick={function () { setKoL(JSON.parse(JSON.stringify((tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null }))); }}
+              <button onClick={function () { setKoTouched(false); setKoL(JSON.parse(JSON.stringify((tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null }))); }}
                 style={{ fontSize: 11, fontWeight: 700, padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: "1px solid " + $.gold + "70", background: "rgba(251,191,36,.10)", color: $.goldL }}>↩︎ 保存内容に戻す</button>
             </div>
             <div style={{ fontSize: 10, color: $.dim, marginBottom: 6 }}>
               各カードの<strong>勝った国名をクリック</strong>すると次のラウンドへ進みます（もう一度押すと取消）。R32→R16→準々→準決→決勝の順に。決勝枠で👑優勝、🥉THIRD PLACEで3位を選択。最後に下の<strong>💾 実結果を保存</strong>。
             </div>
-            <AdminKoBracket tour={tour} ko={ko} adv={koAdv} />
+            <AdminKoBracket tour={tour} ko={ko} adv={koAdv} setScore={setKoScore} />
 
             {/* Save bar */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid " + $.border }}>
@@ -2368,7 +2486,8 @@ function TournamentBracket({ tour, simKo, simAdv, resetSim, simActive }) {
   var rightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
   var leftD = useMemo(function () { return deriveRounds(leftRes, simK); }, [leftRes, simK]);
   var rightD = useMemo(function () { return deriveRounds(rightRes, simK); }, [rightRes, simK]);
-  var ctx = { ko: simK, des: { A: null, B: null, C: null }, adv: simAdv || noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true };
+  var koScores = useMemo(function () { return buildKoScores(ko); }, [ko]);
+  var ctx = { ko: simK, des: { A: null, B: null, C: null }, adv: simAdv || noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true, koScores: koScores };
   if (!hasAnyGroup) return null;
   return (
     <div style={{ marginTop: 30, marginBottom: 24 }}>
@@ -2591,7 +2710,7 @@ function BView({ leftRes, rightRes, leftD, rightD, ko, ctx }) {
         <div style={{ display: "flex", alignItems: "stretch", minHeight: 520, minWidth: 1060 }}>
           <R32C ms={leftRes || []} ctx={ctx} /><CL n={4} d="R" /><SC items={leftD.r16 || []} stage="r16" ctx={ctx} /><CL n={2} d="R" /><SC items={leftD.qf || []} stage="qf" ctx={ctx} ac={$.gold} /><CL n={1} d="R" />
           <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", width: 105 }}><SfB teams={lSfT} ctx={ctx} label="SF1" /></div><CL n={1} d="R" />
-          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", width: 130, padding: "0 6px" }}><FB ko={ko} des={ctx.des} adv={ctx.adv} /></div><CL n={1} d="L" />
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", width: 130, padding: "0 6px" }}><FB ko={ko} des={ctx.des} adv={ctx.adv} scores={ctx.koScores} /></div><CL n={1} d="L" />
           <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", width: 105 }}><SfB teams={rSfT} ctx={ctx} label="SF2" /></div><CL n={1} d="L" />
           <SC items={rightD.qf || []} stage="qf" ctx={ctx} ac={$.gold} /><CL n={2} d="L" /><SC items={rightD.r16 || []} stage="r16" ctx={ctx} /><CL n={4} d="L" /><R32C ms={rightRes || []} ctx={ctx} />
         </div>
@@ -2603,6 +2722,7 @@ function R32C({ ms, ctx }) { return <div style={{ display: "flex", flexDirection
 function MM({ m, ctx }) {
   var [o, setO] = useState(false);
   var has3 = m.seeds ? m.seeds.find(function (s) { return s && s.startsWith("3("); }) : null;
+  var sc = koGoals(ctx.koScores, "r32", m.teams[0] && m.teams[0].n, m.teams[1] && m.teams[1].n);
   // 3位枠の候補チーム名（各候補グループの現3位）。読み取り専用バージョンで使用
   function third3Slot(seed, idx) {
     var letters = seed.match(/[A-L]/g) || [];
@@ -2620,7 +2740,7 @@ function MM({ m, ctx }) {
           var tm = m.teams[idx];
           // 3位枠: 割当が確定（チーム解決済み）なら実チーム表示。未確定のみ候補(or)表示
           if (ctx.readOnly && sd && sd.startsWith("3(") && (!tm || tm.tbd || !tm.n)) return third3Slot(sd, idx);
-          return <TR key={idx} t={tm} stage="r32" ctx={ctx} seed={sd} />;
+          return <TR key={idx} t={tm} stage="r32" ctx={ctx} seed={sd} g={sc ? (idx === 0 ? sc.a : sc.b) : null} />;
         })}
       </div>
       {has3 && !ctx.readOnly && (
@@ -2632,9 +2752,9 @@ function MM({ m, ctx }) {
     </div>
   );
 }
-function SC({ items, stage, ctx, ac }) { return <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-around", width: 105, flexShrink: 0 }}>{(items || []).map(function (item, i) { var ts = [item.t1, item.t2].filter(function (x) { return x && x.n; }); if (ts.length < 2) return <div key={i} style={{ border: "1px dashed " + $.dim + "40", borderRadius: 5, padding: "4px 6px", fontSize: 9, color: $.dim, textAlign: "center" }}>TBD</div>; return <div key={i} style={{ borderRadius: 6, overflow: "hidden", border: "1px solid " + (ac ? ac + "60" : $.border), background: $.card }}><TR t={item.t1} stage={stage} ctx={ctx} ac={ac} /><TR t={item.t2} stage={stage} ctx={ctx} ac={ac} /></div>; })}</div>; }
-function SfB({ teams, ctx, label }) { var t1 = (teams || [])[0] || null, t2 = (teams || [])[1] || null; if (!t1 && !t2) return <div style={{ border: "1px dashed " + $.dim + "40", borderRadius: 6, padding: 8, fontSize: 9, color: $.dim, textAlign: "center" }}>{label}<br />TBD</div>; return <div><div style={{ fontFamily: fontH, fontSize: 10, letterSpacing: 2, color: $.goldD, marginBottom: 2 }}>{label}</div><div style={{ borderRadius: 6, overflow: "hidden", border: "1px solid " + $.gold + "55", background: $.card }}>{t1 ? <TR t={t1} stage="sf" ctx={ctx} ac={$.gold} /> : <div style={{ padding: "3px 6px", fontSize: 9, color: $.dim, height: 22, borderBottom: "1px solid " + $.border }}>TBD</div>}{t2 ? <TR t={t2} stage="sf" ctx={ctx} ac={$.gold} /> : <div style={{ padding: "3px 6px", fontSize: 9, color: $.dim, height: 22 }}>TBD</div>}</div></div>; }
-function TR({ t, stage, ctx, seed, ac }) {
+function SC({ items, stage, ctx, ac }) { return <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-around", width: 105, flexShrink: 0 }}>{(items || []).map(function (item, i) { var ts = [item.t1, item.t2].filter(function (x) { return x && x.n; }); if (ts.length < 2) return <div key={i} style={{ border: "1px dashed " + $.dim + "40", borderRadius: 5, padding: "4px 6px", fontSize: 9, color: $.dim, textAlign: "center" }}>TBD</div>; var sc = koGoals(ctx.koScores, stage, item.t1 && item.t1.n, item.t2 && item.t2.n); return <div key={i} style={{ borderRadius: 6, overflow: "hidden", border: "1px solid " + (ac ? ac + "60" : $.border), background: $.card }}><TR t={item.t1} stage={stage} ctx={ctx} ac={ac} g={sc ? sc.a : null} /><TR t={item.t2} stage={stage} ctx={ctx} ac={ac} g={sc ? sc.b : null} /></div>; })}</div>; }
+function SfB({ teams, ctx, label }) { var t1 = (teams || [])[0] || null, t2 = (teams || [])[1] || null; if (!t1 && !t2) return <div style={{ border: "1px dashed " + $.dim + "40", borderRadius: 6, padding: 8, fontSize: 9, color: $.dim, textAlign: "center" }}>{label}<br />TBD</div>; var sc = koGoals(ctx.koScores, "sf", t1 && t1.n, t2 && t2.n); return <div><div style={{ fontFamily: fontH, fontSize: 10, letterSpacing: 2, color: $.goldD, marginBottom: 2 }}>{label}</div><div style={{ borderRadius: 6, overflow: "hidden", border: "1px solid " + $.gold + "55", background: $.card }}>{t1 ? <TR t={t1} stage="sf" ctx={ctx} ac={$.gold} g={sc ? sc.a : null} /> : <div style={{ padding: "3px 6px", fontSize: 9, color: $.dim, height: 22, borderBottom: "1px solid " + $.border }}>TBD</div>}{t2 ? <TR t={t2} stage="sf" ctx={ctx} ac={$.gold} g={sc ? sc.b : null} /> : <div style={{ padding: "3px 6px", fontSize: 9, color: $.dim, height: 22 }}>TBD</div>}</div></div>; }
+function TR({ t, stage, ctx, seed, ac, g }) {
   if (!t || t.tbd || !t.n) {
     var lbl = seed ? (seed.startsWith("3(") ? "3位" : seed) : (t && t.n) || "TBD";
     return (
@@ -2653,6 +2773,7 @@ function TR({ t, stage, ctx, seed, ac }) {
       </span>
       <span style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
         {dk && <span style={{ fontSize: 7, padding: "0 3px", borderRadius: 2, background: DES[dk].bg, color: DES[dk].cl, fontWeight: 700 }}>{dk}</span>}
+        {g != null && <span style={{ fontSize: 11, fontWeight: 800, color: isAdv ? $.gold : $.txt2, minWidth: 9, textAlign: "right" }}>{g}</span>}
         {isAdv && <span style={{ color: ac || $.pitchL, fontSize: 9 }}>✓</span>}
       </span>
     </div>
@@ -2660,14 +2781,15 @@ function TR({ t, stage, ctx, seed, ac }) {
 }
 function TP3({ seed, gl, tp, pick3 }) { var cands = get3c(seed, gl); var cur = (tp && tp[seed]) || null; return <div style={{ background: $.purple + "10", border: "1px solid " + $.purple + "25", borderRadius: 5, padding: 4, marginTop: 2 }}><div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>{cands.map(function (t) { return <button key={t.n + t.grp} onClick={function () { pick3(seed, t.n); }} style={{ fontSize: 8, padding: "2px 5px", borderRadius: 3, cursor: "pointer", background: cur === t.n ? $.purple : "rgba(255,255,255,.05)", border: "1px solid " + (cur === t.n ? $.purple : $.border), color: cur === t.n ? "#fff" : $.txt2 }}><Fl n={t.n} s={9} />{t.n}({t.grp})</button>; })}</div></div>; }
 function CL({ n, d }) { var isR = d === "R"; return <div style={{ display: "flex", flexDirection: "column", width: 14, flexShrink: 0 }}>{Array.from({ length: n }).map(function (_, i) { return <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column" }}><div style={Object.assign({ flex: 1, minHeight: 4, borderBottom: "1px solid " + $.gold + "40" }, isR ? { borderRight: "1px solid " + $.gold + "40" } : { borderLeft: "1px solid " + $.gold + "40" })} /><div style={Object.assign({ flex: 1, minHeight: 4, borderTop: "1px solid " + $.gold + "40" }, isR ? { borderRight: "1px solid " + $.gold + "40" } : { borderLeft: "1px solid " + $.gold + "40" })} /></div>; })}</div>; }
-function FB({ ko, des, adv }) {
+function FB({ ko, des, adv, scores }) {
   var f1 = (ko.sf || []).length >= 1 ? ko.sf[0] : null, f2 = (ko.sf || []).length >= 2 ? ko.sf[1] : null;
+  var sc = koGoals(scores, "final", f1, f2);
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ fontFamily: fontH, fontSize: 13, letterSpacing: 4, color: $.gold, marginBottom: 4 }}>🏆 FINAL</div>
       <div style={{ borderRadius: 10, overflow: "hidden", border: "2px solid " + $.gold, background: $.cardB, boxShadow: $.glow }}>
-        {f1 ? <FRw tn={f1} ko={ko} adv={adv} /> : <div style={{ padding: 4, fontSize: 9, color: $.dim, borderBottom: "1px solid " + $.border }}>SF1</div>}
-        {f2 ? <FRw tn={f2} ko={ko} adv={adv} /> : <div style={{ padding: 4, fontSize: 9, color: $.dim }}>SF2</div>}
+        {f1 ? <FRw tn={f1} ko={ko} adv={adv} g={sc ? sc.a : null} /> : <div style={{ padding: 4, fontSize: 9, color: $.dim, borderBottom: "1px solid " + $.border }}>SF1</div>}
+        {f2 ? <FRw tn={f2} ko={ko} adv={adv} g={sc ? sc.b : null} /> : <div style={{ padding: 4, fontSize: 9, color: $.dim }}>SF2</div>}
       </div>
       {ko.final && ko.final.length >= 1 && (
         <div style={{ marginTop: 6 }}>
@@ -2684,7 +2806,7 @@ function FB({ ko, des, adv }) {
     </div>
   );
 }
-function FRw({ tn, ko, adv }) { var isAdv = (ko.final || []).indexOf(tn) >= 0; return <div onClick={function () { adv("final", tn); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", cursor: "pointer", background: isAdv ? $.gold + "20" : "transparent", borderBottom: "1px solid " + $.border, fontSize: 10, fontWeight: isAdv ? 700 : 400 }}><span style={{ display: "flex", alignItems: "center" }}><Fl n={tn} s={13} />{tn}</span>{isAdv && <span style={{ color: $.pitchL, fontSize: 9 }}>✓</span>}</div>; }
+function FRw({ tn, ko, adv, g }) { var isAdv = (ko.final || []).indexOf(tn) >= 0; return <div onClick={function () { adv("final", tn); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 8px", cursor: "pointer", background: isAdv ? $.gold + "20" : "transparent", borderBottom: "1px solid " + $.border, fontSize: 10, fontWeight: isAdv ? 700 : 400 }}><span style={{ display: "flex", alignItems: "center" }}><Fl n={tn} s={13} />{tn}</span><span style={{ display: "flex", alignItems: "center", gap: 3 }}>{g != null && <span style={{ fontSize: 11, fontWeight: 800, color: $.gold }}>{g}</span>}{isAdv && <span style={{ color: $.pitchL, fontSize: 9 }}>✓</span>}</span></div>; }
 function ThirdP({ ko, adv }) { var sfL = (ko.qf || []).filter(function (tn) { return (ko.sf || []).indexOf(tn) < 0; }); if (sfL.length < 2) return null; return <div style={{ maxWidth: 280, marginBottom: 16 }}><div style={{ fontFamily: fontH, fontSize: 14, letterSpacing: 3, color: $.gold, marginBottom: 4 }}>🥉 THIRD PLACE</div><div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid " + $.gold + "40", background: $.card }}>{sfL.map(function (tn) { var isAdv = ko.third === tn; return <div key={tn} onClick={function () { adv("third", tn); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", cursor: "pointer", background: isAdv ? $.gold + "20" : "transparent", borderBottom: "1px solid " + $.border, fontSize: 12, fontWeight: isAdv ? 700 : 400 }}><span style={{ display: "flex", alignItems: "center" }}><Fl n={tn} s={16} />{tn}</span>{isAdv && <span>🥉</span>}</div>; })}</div></div>; }
 function BDown({ score }) { return <div style={{ borderRadius: 12, border: "1px solid " + $.border, background: $.card, padding: 16, marginTop: 12 }}><div style={{ fontFamily: fontH, fontSize: 16, letterSpacing: 3, color: $.gold, marginBottom: 10 }}>POINT BREAKDOWN</div>{score.bd.map(function (b, i) { return <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "5px 0", borderBottom: "1px solid " + $.border }}><span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}><Fl n={b.tn} s={14} />{b.tn}{b.dk && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: DES[b.dk].bg, color: DES[b.dk].cl, fontWeight: 700 }}>{DES[b.dk].l}</span>}</span><span style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: $.dim, fontSize: 10 }}>{b.stg.join(" → ")}</span><span style={{ fontFamily: fontH, fontSize: 16, color: $.pitchL }}>+{b.pts.toFixed(1)}</span></span></div>; })}<div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}><div style={{ fontFamily: fontH, fontSize: 28, color: $.gold, textShadow: "0 0 30px rgba(245,197,24,.4)" }}>TOTAL: {score.total.toFixed(1)}</div></div></div>; }
 
