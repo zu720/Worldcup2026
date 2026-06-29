@@ -165,6 +165,11 @@ var OFFICIAL_GROUP_RESULTS = [
   ["イングランド","パナマ",2,0,"2026-06-27"],["クロアチア","ガーナ",2,1,"2026-06-27"],
 ];
 
+// 公式ノックアウト結果（確定分のみ。各ラウンドの「勝者」を列挙）。
+// 2026-06-28時点: R32第1試合 カナダ 1-0 南アフリカ（カナダがR16進出）。
+// 試合が進むたびに追記。読み込み時は和集合で反映され、手動入力を消さない。
+var OFFICIAL_KO_RESULTS = { r32: ["カナダ"], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
+
 // ═══════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════
@@ -384,7 +389,8 @@ function deriveTpProvisional(groups) {
 function resolveLiveR32(tour) {
   var groups = (tour && tour.groups) || {}, ko = (tour && tour.ko) || {};
   var gl = deriveGlFromTour(groups);
-  var tp = (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : deriveTpProvisional(groups);
+  // グループ確定後の3位枠は公式表(provisional)が完全。実KO情報があれば上書きで補強。
+  var tp = Object.assign({}, deriveTpProvisional(groups), (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : {});
   var mk = function (arr) { return arr.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, gl, tp); }) }; }); };
   return { leftRes: mk(LR32), rightRes: mk(RR32) };
 }
@@ -1730,6 +1736,26 @@ function CardEditor({ tour, setTour }) {
     </div>
   );
 }
+// 管理画面の決勝T入力用ブラケット。ランキング画面のブラケット(BView)を流用し、
+// クリック(adv)で勝者を勝ち上がらせる。R32の対戦は確定グループ順位から常に算出（provisional）。
+function AdminKoBracket({ tour, ko, adv }) {
+  var groups = (tour && tour.groups) || {};
+  var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
+  var liveTp = useMemo(function () { return deriveTpProvisional(groups); }, [groups]);
+  var leftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
+  var rightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
+  var leftD = useMemo(function () { return deriveRounds(leftRes, ko); }, [leftRes, ko]);
+  var rightD = useMemo(function () { return deriveRounds(rightRes, ko); }, [rightRes, ko]);
+  var noop = function () {};
+  var ctx = { ko: ko, des: { A: null, B: null, C: null }, adv: adv, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true };
+  if (Object.keys(groups).length === 0) return <div style={{ fontSize: 11, color: $.dim, padding: "8px 0" }}>先に「📥 公式結果を読み込む」でグループ結果を反映してください（R32の組合せが自動で決まります）。</div>;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <BView leftRes={leftRes} rightRes={rightRes} leftD={leftD} rightD={rightD} ko={ko} ctx={ctx} />
+      {ko.sf && ko.sf.length >= 2 && <ThirdP ko={ko} adv={adv} />}
+    </div>
+  );
+}
 function AdminPanel({ tour, setTour, close }) {
   var ADMIN_PW = import.meta.env.VITE_ADMIN_PASSWORD || "sankoen2026";
   var [unlocked, setUnlocked] = useState(false);
@@ -1747,21 +1773,24 @@ function AdminPanel({ tour, setTour, close }) {
     if (pw === ADMIN_PW) { setUnlocked(true); setPwErr(""); }
     else setPwErr("合言葉が違います");
   }
-  function toggleStage(stage, n) {
-    setKoL(function (p) {
-      var nx = { r32: (p.r32 || []).slice(), r16: (p.r16 || []).slice(), qf: (p.qf || []).slice(), sf: (p.sf || []).slice(), final: (p.final || []).slice(), champ: p.champ, third: p.third, matches: p.matches, teamCards: p.teamCards };
-      var order = ["r32", "r16", "qf", "sf"];
-      if (nx[stage].indexOf(n) >= 0) { // 除外 → それ以降のラウンドからも除去
-        order.slice(order.indexOf(stage)).forEach(function (s) { nx[s] = nx[s].filter(function (t) { return t !== n; }); });
-        if (nx.champ === n) nx.champ = null;
-        if (nx.third === n) nx.third = null;
-      } else { nx[stage] = nx[stage].concat(n); }
-      nx.final = nx.sf.slice(); // 決勝進出＝準決勝の勝者
-      return nx;
+  // ブラケットのクリック処理（勝者を次ラウンドへ／再クリックで取消し、以降のラウンドからも除去）。
+  // 国名クリックで stage(r32/r16/qf/sf/final/champ/third) に勝者を追加/除外する。
+  function koAdv(stage, tn) {
+    if (!tn) return;
+    setKoL(function (prev) {
+      try {
+        var n = { r32: (prev.r32 || []).slice(), r16: (prev.r16 || []).slice(), qf: (prev.qf || []).slice(), sf: (prev.sf || []).slice(), final: (prev.final || []).slice(), champ: prev.champ, third: prev.third, matches: prev.matches, teamCards: prev.teamCards };
+        if (stage === "champ" || stage === "third") { n[stage] = n[stage] === tn ? null : tn; return n; }
+        var idx = n[stage].indexOf(tn);
+        if (idx >= 0) {
+          n[stage] = n[stage].filter(function (t) { return t !== tn; });
+          ["r32", "r16", "qf", "sf", "final"].forEach(function (s, si, arr) { if (si > arr.indexOf(stage)) n[s] = n[s].filter(function (t) { return t !== tn; }); });
+          if (n.champ === tn) n.champ = null;
+          if (n.third === tn) n.third = null;
+        } else { n[stage] = n[stage].concat(tn); }
+        return n;
+      } catch (e) { return prev; }
     });
-  }
-  function setSingle(stage, n) {
-    setKoL(function (p) { return Object.assign({}, p, { [stage]: p[stage] === n ? null : n }); });
   }
   async function save() {
     setSaving(true);
@@ -1816,9 +1845,17 @@ function AdminPanel({ tour, setTour, close }) {
       var matches = Object.keys(map).map(function (k) { return map[k]; });
       var groups = computeGroups(matches, (tour && tour.ko && tour.ko.teamCards));
       var newKo = Object.assign({}, (tour && tour.ko) || {}, { matches: matches });
+      // 確定済みの決勝T結果を「和集合」で反映（既存の勝者・手動入力は消さない）
+      ["r32", "r16", "qf", "sf", "final"].forEach(function (s) {
+        var cur = (newKo[s] || []).slice();
+        (OFFICIAL_KO_RESULTS[s] || []).forEach(function (tn) { if (cur.indexOf(tn) < 0) cur.push(tn); });
+        newKo[s] = cur;
+      });
+      if (OFFICIAL_KO_RESULTS.champ && !newKo.champ) newKo.champ = OFFICIAL_KO_RESULTS.champ;
+      if (OFFICIAL_KO_RESULTS.third && !newKo.third) newKo.third = OFFICIAL_KO_RESULTS.third;
       await saveTournament({ phase: "r32", groups: groups, ko: newKo, last_api_update: (new Date()).toISOString() });
       setTour(function (t) { return Object.assign({}, t, { phase: "r32", groups: groups, ko: newKo, last_api_update: (new Date()).toISOString() }); });
-      setSyncMsg("✓ 公式結果(全72試合)を読み込みました。星取表・各組3位順位・R32組合せに反映。以降は手動で微調整できます。");
+      setSyncMsg("✓ 公式結果(全72試合＋確定済みR32)を読み込みました。星取表・各組3位順位・R32組合せに反映。決勝Tは下のブラケットでクリック入力できます。");
     } catch (e) { setSyncMsg("✕ " + (e.message || e)); }
     setSyncing(false);
   }
@@ -1874,19 +1911,6 @@ function AdminPanel({ tour, setTour, close }) {
     setSyncing(false);
   }
 
-  var STAGES = [
-    { k: "r32", l: "ベスト16進出（R32の勝者・16）" },
-    { k: "r16", l: "ベスト8進出（R16の勝者・8）" },
-    { k: "qf",  l: "ベスト4進出（準々決勝の勝者・4）" },
-    { k: "sf",  l: "決勝進出（準決勝の勝者・2）" },
-  ];
-  // 各ラウンドの選択候補（前ラウンドの勝者のみ。R32は実際の進出32チーム）
-  var koR32 = useMemo(function () {
-    var r = resolveLiveR32(tour), pool = [];
-    (r.leftRes || []).concat(r.rightRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { if (t && t.n && !t.tbd && pool.indexOf(t.n) < 0) pool.push(t.n); }); });
-    return pool;
-  }, [tour]);
-  function koPool(stage) { return stage === "r32" ? koR32 : stage === "r16" ? (ko.r32 || []) : stage === "qf" ? (ko.r16 || []) : stage === "sf" ? (ko.qf || []) : []; }
   var PHASES = [
     { k: "pre", l: "開幕前" },
     { k: "groups", l: "グループ" },
@@ -1962,48 +1986,16 @@ function AdminPanel({ tour, setTour, close }) {
             {/* チーム別カード集計（フェアプレー）— チーム毎の累計枚数を直接編集 */}
             <CardEditor tour={tour} setTour={setTour} />
 
-            {/* 決勝トーナメント結果入力（各ラウンドの勝者を選択／前ラウンドの勝者のみ候補） */}
-            <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, margin: "4px 0 8px" }}>🏆 決勝トーナメント結果</div>
-            {STAGES.map(function (s) {
-              var picked = ko[s.k] || [];
-              var pool = koPool(s.k);
-              return (
-                <div key={s.k} style={{ marginBottom: 12, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
-                  <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 6 }}>{s.l}　<span style={{ color: $.dim, fontWeight: 400 }}>選択中: {picked.length}</span></div>
-                  {pool.length === 0 ? (
-                    <div style={{ fontSize: 11, color: $.dim }}>{s.k === "r32" ? "グループ順位が未確定です" : "前のラウンドの勝者を先に選択してください"}</div>
-                  ) : (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                      {pool.map(function (nm) {
-                        var on = picked.indexOf(nm) >= 0;
-                        return <button key={nm} onClick={function () { toggleStage(s.k, nm); }} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 5, border: "1px solid " + (on ? $.pitchL : $.border), background: on ? "rgba(34,197,94,.18)" : "transparent", color: on ? $.pitchL : $.txt2, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3 }}><Fl n={nm} s={11} />{nm}</button>;
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* champ + third */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-              {[{ k: "champ", l: "👑 優勝", pool: ko.sf }, { k: "third", l: "🥉 3位", pool: (ko.qf || []).filter(function (n) { return (ko.sf || []).indexOf(n) < 0; }) }].map(function (s) {
-                return (
-                  <div key={s.k} style={{ padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
-                    <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 6 }}>{s.l}</div>
-                    {(!s.pool || s.pool.length === 0) ? (
-                      <div style={{ fontSize: 11, color: $.dim }}>{s.k === "champ" ? "決勝進出（準決勝の勝者）を先に設定" : "準々決勝・準決勝の勝者を先に設定"}</div>
-                    ) : (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                        {s.pool.map(function (n) {
-                          var on = ko[s.k] === n;
-                          return <button key={n} onClick={function () { setSingle(s.k, n); }} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 5, border: "1px solid " + (on ? $.gold : $.border), background: on ? "rgba(245,197,24,.18)" : "transparent", color: on ? $.gold : $.txt2, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}><Fl n={n} s={11} />{n}</button>;
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            {/* 決勝トーナメント結果入力（ブラケットで勝者をクリック → そのまま勝ち上がり） */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "4px 0 4px" }}>
+              <div style={{ fontSize: 12, color: $.gold, fontWeight: 700 }}>🏆 決勝トーナメント結果</div>
+              <button onClick={function () { setKoL(JSON.parse(JSON.stringify((tour && tour.ko) || { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null }))); }}
+                style={{ fontSize: 11, fontWeight: 700, padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: "1px solid " + $.gold + "70", background: "rgba(251,191,36,.10)", color: $.goldL }}>↩︎ 保存内容に戻す</button>
             </div>
+            <div style={{ fontSize: 10, color: $.dim, marginBottom: 6 }}>
+              各カードの<strong>勝った国名をクリック</strong>すると次のラウンドへ進みます（もう一度押すと取消）。R32→R16→準々→準決→決勝の順に。決勝枠で👑優勝、🥉THIRD PLACEで3位を選択。最後に下の<strong>💾 実結果を保存</strong>。
+            </div>
+            <AdminKoBracket tour={tour} ko={ko} adv={koAdv} />
 
             {/* Save bar */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid " + $.border }}>
@@ -2371,7 +2363,7 @@ function TournamentBracket({ tour, simKo, simAdv, resetSim, simActive }) {
   var hasAnyGroup = Object.keys(groups || {}).length > 0;
   var noop = function () {};
   var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
-  var liveTp = useMemo(function () { return (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : deriveTpProvisional(groups); }, [ko, groups]);
+  var liveTp = useMemo(function () { return Object.assign({}, deriveTpProvisional(groups), (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : {}); }, [ko, groups]);
   var leftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
   var rightRes = useMemo(function () { try { return RR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
   var leftD = useMemo(function () { return deriveRounds(leftRes, simK); }, [leftRes, simK]);
