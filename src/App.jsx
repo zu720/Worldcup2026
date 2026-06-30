@@ -175,6 +175,7 @@ var OFFICIAL_KO_RESULTS = [
   { round: 4, home: "南アフリカ", away: "カナダ", hs: 0, as: 1, date: "2026-06-28" },
   { round: 4, home: "パラグアイ", away: "ドイツ", hs: 1, as: 1, win: "パラグアイ", pkh: 4, pka: 3, date: "2026-06-29" },
   { round: 4, home: "ブラジル", away: "日本", hs: 2, as: 1, date: "2026-06-29" },
+  { round: 4, home: "オランダ", away: "モロッコ", hs: 1, as: 1, win: "モロッコ", pkh: 2, pka: 3, date: "2026-06-29" },
 ];
 // ロック対象（ステージ→確定済みチーム集合）。OFFICIAL_KO_RESULTSから生成。
 var KO_LOCKED = (function () { var o = {}; OFFICIAL_KO_RESULTS.forEach(function (r) { var st = KO_RS[r.round]; if (!st) return; (o[st] = o[st] || {})[r.home] = 1; o[st][r.away] = 1; }); return o; })();
