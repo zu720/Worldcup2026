@@ -1149,6 +1149,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
   var [err, setErr] = useState("");
   var [open, setOpen] = useState(null); // expanded player
   var [bdOpen, setBdOpen] = useState(null); // 得点内訳を開いているプレイヤー
+  var [simName, setSimName] = useState(""); // 決勝T試算で選択中の参加者
 
   useEffect(function () {
     var live = true;
@@ -1290,9 +1291,39 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
 
       {simActive && (
         <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "rgba(168,85,247,.12)", border: "1px solid " + $.purple + "55", color: $.purpleL, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
-          🔮 トーナメントのシミュレーション結果を反映中（この端末だけの試算）。<span style={{ color: $.dim, fontWeight: 400 }}>「⚽ 途中経過」タブの🔄リセットで元に戻せます。</span>
+          🔮 トーナメントのシミュレーション結果を反映中（この端末だけの試算）。<span style={{ color: $.dim, fontWeight: 400 }}>下の🔄リセット、または「⚽ 途中経過」タブで元に戻せます。</span>
         </div>
       )}
+
+      {/* 決勝T試算: 参加者を選んで、その人が最高/最低順位になる勝ち上がりを反映 */}
+      {rows.length > 0 && (function () {
+        var simReady = (liveR32.leftRes || []).concat(liveR32.rightRes || []).reduce(function (a, m) { return a + (m.teams || []).length; }, 0) === 32;
+        var runSim = function (maximize) {
+          var m = rows.find(function (x) { return x.name === simName; }); if (!m) return;
+          var ko = optimizeBracket(m, liveR32.leftRes, liveR32.rightRes, groupsForScore, maximize, (tour && tour.ko) || {});
+          if (ko && applySim) applySim(ko);
+        };
+        return (
+          <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(168,85,247,.08)", border: "1px solid " + $.purple + "44" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: $.purpleL, marginBottom: 2 }}>🔮 決勝トーナメント試算</div>
+            <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>参加者を選ぶと、その人が<b>最高順位</b>／<b>最低順位</b>になる勝ち上がりを決勝T表と全員のスコアに反映します（この端末だけの試算）。確定済みの試合は固定。</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <select value={simName} onChange={function (e) { setSimName(e.target.value); }}
+                style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.purple + "66", fontSize: 13, fontWeight: 700, minWidth: 160 }}>
+                <option value="">参加者を選択…</option>
+                {rows.map(function (r, i) { return <option key={r.name} value={r.name}>{(i + 1) + "位  " + r.name}</option>; })}
+              </select>
+              <button disabled={!simName || !simReady} onClick={function () { runSim(true); }}
+                style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simName && simReady) ? "pointer" : "default", opacity: (simName && simReady) ? 1 : .45, border: "1px solid " + $.pitchL + "80", background: "rgba(34,197,94,.12)", color: $.pitchL }}>🔼 最高順位になる結果</button>
+              <button disabled={!simName || !simReady} onClick={function () { runSim(false); }}
+                style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simName && simReady) ? "pointer" : "default", opacity: (simName && simReady) ? 1 : .45, border: "1px solid " + $.red + "80", background: "rgba(248,113,113,.12)", color: $.redL }}>🔽 最低順位になる結果</button>
+              {simActive && <button onClick={resetSim || function () {}}
+                style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: "pointer", border: "1px solid " + $.gold + "70", background: "rgba(251,191,36,.10)", color: $.goldL }}>🔄 リセット</button>}
+            </div>
+            {!simReady && <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>※ グループ全結果が入りR32が確定すると使えます（管理画面で「📥 公式結果を読み込む」）。</div>}
+          </div>
+        );
+      })()}
 
 
       {rows.length === 0 && (
@@ -1397,16 +1428,6 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                         </div>
                       );
                     })}
-                  </div>
-
-                  {/* トーナメント試算: この人が最高／最低になる勝ち上がり */}
-                  <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                    <span style={{ fontSize: 10, color: $.dim, fontWeight: 700 }}>決勝T試算:</span>
-                    <button onClick={function (e) { e.stopPropagation(); var ko = optimizeBracket(r, liveR32.leftRes, liveR32.rightRes, groupsForScore, true, (tour && tour.ko) || {}); if (ko && applySim) applySim(ko); }}
-                      style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: "1px solid " + $.pitchL + "70", background: "rgba(34,197,94,.10)", color: $.pitchL }}>🔼 この人が最高得点</button>
-                    <button onClick={function (e) { e.stopPropagation(); var ko = optimizeBracket(r, liveR32.leftRes, liveR32.rightRes, groupsForScore, false, (tour && tour.ko) || {}); if (ko && applySim) applySim(ko); }}
-                      style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: "pointer", border: "1px solid " + $.red + "70", background: "rgba(248,113,113,.10)", color: $.redL }}>🔽 この人が最低得点</button>
-                    <span style={{ fontSize: 9, color: $.dim }}>全試合終了時にこの人が最高/最低になる勝ち上がり。決勝T表と全員のスコアに反映（🔄で戻す）</span>
                   </div>
 
                   {/* 得点内訳 */}
