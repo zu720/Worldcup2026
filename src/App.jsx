@@ -170,9 +170,11 @@ var KO_RS = { 4: "r32", 5: "r16", 6: "qf", 7: "sf", 8: "final" };
 var KO_SR = { r32: 4, r16: 5, qf: 6, sf: 7, final: 8 };
 // 公式ノックアウト結果（確定＝公式発表済みの試合のみ）。スコア付きで列挙。
 // これらは管理画面でロックされ、クリック/スコア編集で動かせない（誤操作防止）。
-// 2026-06-28時点: R32第1試合 南アフリカ 0-1 カナダ（カナダがR16進出）。試合が進むたびに追記。
+// win=PK等で勝ち上がるチーム（省略時はスコアの勝者）。pkh/pka=PK戦の得点（表示用）。
 var OFFICIAL_KO_RESULTS = [
   { round: 4, home: "南アフリカ", away: "カナダ", hs: 0, as: 1, date: "2026-06-28" },
+  { round: 4, home: "パラグアイ", away: "ドイツ", hs: 1, as: 1, win: "パラグアイ", pkh: 4, pka: 3, date: "2026-06-29" },
+  { round: 4, home: "ブラジル", away: "日本", hs: 2, as: 1, date: "2026-06-29" },
 ];
 // ロック対象（ステージ→確定済みチーム集合）。OFFICIAL_KO_RESULTSから生成。
 var KO_LOCKED = (function () { var o = {}; OFFICIAL_KO_RESULTS.forEach(function (r) { var st = KO_RS[r.round]; if (!st) return; (o[st] = o[st] || {})[r.home] = 1; o[st][r.away] = 1; }); return o; })();
@@ -183,15 +185,17 @@ function buildKoScores(ko) {
   (((ko && ko.matches) || [])).forEach(function (m) {
     if (!m || m.round == null || m.round < 4 || m.hs == null || m.as == null) return;
     var st = KO_RS[m.round]; if (!st) return;
-    map[st + ":" + [m.home, m.away].slice().sort().join("|")] = { home: m.home, away: m.away, hs: m.hs, as: m.as, official: !!m.official };
+    map[st + ":" + [m.home, m.away].slice().sort().join("|")] = { home: m.home, away: m.away, hs: m.hs, as: m.as, official: !!m.official, win: m.win || null, pkh: m.pkh, pka: m.pka };
   });
   return map;
 }
-// 指定ステージ・2チームのスコアを取得（aの得点/bの得点）。無ければnull。
+// 指定ステージ・2チームのスコアを取得（aの得点/bの得点）。無ければnull。PK情報も返す。
 function koGoals(scores, stage, a, b) {
   if (!scores || !a || !b) return null;
   var s = scores[stage + ":" + [a, b].slice().sort().join("|")]; if (!s) return null;
-  return { a: s.home === a ? s.hs : s.as, b: s.home === a ? s.as : s.hs, official: s.official };
+  var aHome = s.home === a;
+  var pk = (s.pkh != null && s.pka != null) ? { a: aHome ? s.pkh : s.pka, b: aHome ? s.pka : s.pkh } : null;
+  return { a: aHome ? s.hs : s.as, b: aHome ? s.as : s.hs, official: s.official, win: s.win || null, pk: pk };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1819,7 +1823,7 @@ function KoScoreRow({ stage, a, b, scores, setScore }) {
       <input type="number" min="0" disabled={locked} value={sc && sc.a != null ? sc.a : ""} onChange={function (e) { setScore(stage, a, b, e.target.value); }} style={inp} />
       <span style={{ color: $.dim }}>-</span>
       <input type="number" min="0" disabled={locked} value={sc && sc.b != null ? sc.b : ""} onChange={function (e) { setScore(stage, b, a, e.target.value); }} style={inp} />
-      <span style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", display: "inline-flex", alignItems: "center", gap: 3 }}>{b}<Fl n={b} s={13} />{locked && <span title="確定済み" style={{ marginLeft: 2 }}>🔒</span>}</span>
+      <span style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", display: "inline-flex", alignItems: "center", gap: 3 }}>{b}<Fl n={b} s={13} />{sc && sc.pk && <span title="PK戦" style={{ fontSize: 9, color: $.goldL, marginLeft: 2 }}>PK {sc.pk.a}-{sc.pk.b}</span>}{locked && <span title="確定済み" style={{ marginLeft: 2 }}>🔒</span>}</span>
     </div>
   );
 }
@@ -1958,6 +1962,9 @@ function AdminPanel({ tour, setTour, close }) {
       // 確定済みの決勝T試合（スコア付き・ロック対象）を ko.matches に登録
       OFFICIAL_KO_RESULTS.forEach(function (r) {
         var m = { home: r.home, away: r.away, hs: r.hs, as: r.as, round: r.round, status: "FT", manual: true, official: true, date: r.date || "" };
+        if (r.win) m.win = r.win;
+        if (r.pkh != null) m.pkh = r.pkh;
+        if (r.pka != null) m.pka = r.pka;
         map[matchKey(m)] = m;
       });
       var matches = Object.keys(map).map(function (k) { return map[k]; });
@@ -1966,7 +1973,7 @@ function AdminPanel({ tour, setTour, close }) {
       // 確定済みの決勝T結果から勝者を「和集合」で反映（既存の勝者・手動入力は消さない）
       OFFICIAL_KO_RESULTS.forEach(function (r) {
         var st = KO_RS[r.round]; if (!st) return;
-        var w = r.hs > r.as ? r.home : r.as > r.hs ? r.away : null; if (!w) return;
+        var w = r.win || (r.hs > r.as ? r.home : r.as > r.hs ? r.away : null); if (!w) return; // PK等はwin優先
         var add = function (k, tn) { var cur = (newKo[k] || []).slice(); if (cur.indexOf(tn) < 0) cur.push(tn); newKo[k] = cur; };
         if (st === "final") { add("sf", r.home); add("sf", r.away); add("final", r.home); add("final", r.away); if (!newKo.champ) newKo.champ = w; }
         else add(st, w);
