@@ -176,6 +176,8 @@ var OFFICIAL_KO_RESULTS = [
   { round: 4, home: "パラグアイ", away: "ドイツ", hs: 1, as: 1, win: "パラグアイ", pkh: 4, pka: 3, date: "2026-06-29" },
   { round: 4, home: "ブラジル", away: "日本", hs: 2, as: 1, date: "2026-06-29" },
   { round: 4, home: "オランダ", away: "モロッコ", hs: 1, as: 1, win: "モロッコ", pkh: 2, pka: 3, date: "2026-06-29" },
+  { round: 4, home: "コートジボワール", away: "ノルウェー", hs: 1, as: 2, date: "2026-06-30" },
+  { round: 4, home: "スウェーデン", away: "フランス", hs: 0, as: 3, date: "2026-06-30" },
 ];
 // ロック対象（ステージ→確定済みチーム集合）。OFFICIAL_KO_RESULTSから生成。
 var KO_LOCKED = (function () { var o = {}; OFFICIAL_KO_RESULTS.forEach(function (r) { var st = KO_RS[r.round]; if (!st) return; (o[st] = o[st] || {})[r.home] = 1; o[st][r.away] = 1; }); return o; })();
@@ -184,7 +186,8 @@ function koLocked(stage, tn) { return !!(KO_LOCKED[stage] && KO_LOCKED[stage][tn
 function buildKoScores(ko) {
   var map = {};
   (((ko && ko.matches) || [])).forEach(function (m) {
-    if (!m || m.round == null || m.round < 4 || m.hs == null || m.as == null) return;
+    // 片側だけ入力途中でも保持（両方nullの時だけ除外）。入力欄で数字が消えないように。
+    if (!m || m.round == null || m.round < 4 || (m.hs == null && m.as == null)) return;
     var st = KO_RS[m.round]; if (!st) return;
     map[st + ":" + [m.home, m.away].slice().sort().join("|")] = { home: m.home, away: m.away, hs: m.hs, as: m.as, official: !!m.official, win: m.win || null, pkh: m.pkh, pka: m.pka };
   });
