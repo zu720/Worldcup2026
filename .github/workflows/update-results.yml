@@ -1,11 +1,8 @@
 name: Update Match Results
 
+# 自動更新は停止（手動運用に移行）。結果はアプリ側の公式データ(overlayOfficial)で反映。
+# 必要なときだけ GitHub の Actions 画面から手動実行できる（scheduleは無効）。
 on:
-  schedule:
-    # 大会期間中（6-7月）は2時間ごと
-    - cron: '0 */2 * 6,7 *'
-    # 通年 毎日1回（親善試合・日程更新用 / UTC 03:00）
-    - cron: '0 3 * * *'
   workflow_dispatch:
 
 jobs:
