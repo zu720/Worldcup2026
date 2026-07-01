@@ -178,6 +178,7 @@ var OFFICIAL_KO_RESULTS = [
   { round: 4, home: "オランダ", away: "モロッコ", hs: 1, as: 1, win: "モロッコ", pkh: 2, pka: 3, date: "2026-06-29" },
   { round: 4, home: "コートジボワール", away: "ノルウェー", hs: 1, as: 2, date: "2026-06-30" },
   { round: 4, home: "スウェーデン", away: "フランス", hs: 0, as: 3, date: "2026-06-30" },
+  { round: 4, home: "メキシコ", away: "エクアドル", hs: 2, as: 0, date: "2026-06-30" },
 ];
 // ロック対象（ステージ→確定済みチーム集合）。OFFICIAL_KO_RESULTSから生成。
 var KO_LOCKED = (function () { var o = {}; OFFICIAL_KO_RESULTS.forEach(function (r) { var st = KO_RS[r.round]; if (!st) return; (o[st] = o[st] || {})[r.home] = 1; o[st][r.away] = 1; }); return o; })();
@@ -496,6 +497,42 @@ function optimizeBracket(member, leftRes, rightRes, groups, maximize, ko) {
 function shuffle(arr){var a=arr.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=a[i];a[i]=a[j];a[j]=tmp;}return a;}
 function generateRandom(mode){var gl2={};Object.keys(GRP).forEach(function(g){var teams=GRP[g].slice();teams.sort(function(a,b){return a.o-b.o;});if(mode==="safe"){var second=shuffle(teams.slice(1,3))[0];gl2[g]=[teams[0].n,second.n];}else if(mode==="upset"){var weak=shuffle(teams.slice(1));gl2[g]=[weak[0].n,weak[1].n];}else{var rest=shuffle(teams.slice(1));gl2[g]=[teams[0].n,rest[0].n];}});var pool=[];Object.values(gl2).forEach(function(a){a.forEach(function(n){var t=ft(n);if(t)pool.push(t);});});var des2={A:null,B:null,C:null};if(pool.length>=3){pool.sort(function(a,b){return a.o-b.o;});var n=pool.length,picks;if(mode==="upset"){var hi=pool.slice(Math.floor(n/2));picks=shuffle(hi).slice(0,3);}else if(mode==="safe"){var lo=pool.slice(0,Math.max(6,Math.ceil(n/2)));picks=shuffle(lo).slice(0,3);}else{picks=shuffle(pool).slice(0,3);}des2.A=(picks[0]||{}).n||null;des2.B=(picks[1]||{}).n||null;des2.C=(picks[2]||{}).n||null;}return{gl:gl2,des:des2};}
 
+// 確定済みの公式結果(OFFICIAL_GROUP_RESULTS / OFFICIAL_KO_RESULTS)を、DBの大会データに
+// 常に上乗せ（オーバーレイ）する。これで「公式結果を読み込む」操作をしなくても、また
+// 不正確な自動APIがDBを上書きしても、確定結果は必ず反映＆ロックされて表示・採点される。
+function overlayOfficial(tour) {
+  try {
+    var t = tour || {};
+    var ko = t.ko || {};
+    var map = {};
+    dedupeMatches(ko.matches || []).forEach(function (m) { map[matchKey(m)] = m; });
+    OFFICIAL_GROUP_RESULTS.forEach(function (r) {
+      var m = { home: r[0], away: r[1], hs: r[2], as: r[3], round: 1, status: "FT", manual: true, official: true, date: r[4] || schedDate(r[0], r[1]) || "" };
+      var ex = map[matchKey(m)]; if (ex && ex.cards) m.cards = ex.cards;
+      map[matchKey(m)] = m;
+    });
+    OFFICIAL_KO_RESULTS.forEach(function (r) {
+      var m = { home: r.home, away: r.away, hs: r.hs, as: r.as, round: r.round, status: "FT", manual: true, official: true, date: r.date || "" };
+      if (r.win) m.win = r.win; if (r.pkh != null) m.pkh = r.pkh; if (r.pka != null) m.pka = r.pka;
+      map[matchKey(m)] = m;
+    });
+    var matches = Object.keys(map).map(function (k) { return map[k]; });
+    var groups = computeGroups(matches, ko.teamCards);
+    var newKo = Object.assign({}, ko, { matches: matches });
+    ["r32", "r16", "qf", "sf", "final"].forEach(function (s) { newKo[s] = (newKo[s] || []).slice(); });
+    OFFICIAL_KO_RESULTS.forEach(function (r) {
+      var st = KO_RS[r.round]; if (!st) return;
+      var w = r.win || (r.hs > r.as ? r.home : r.as > r.hs ? r.away : null); if (!w) return;
+      var add = function (k, tn) { if (newKo[k].indexOf(tn) < 0) newKo[k].push(tn); };
+      if (st === "final") { add("sf", r.home); add("sf", r.away); add("final", r.home); add("final", r.away); if (!newKo.champ) newKo.champ = w; }
+      else add(st, w);
+    });
+    var hasOfficialKO = OFFICIAL_KO_RESULTS.length > 0;
+    var phase = t.phase && t.phase !== "pre" ? t.phase : (hasOfficialKO ? "r32" : "groups");
+    return Object.assign({}, t, { groups: groups, ko: newKo, phase: phase });
+  } catch (e) { return tour; }
+}
+
 // ═══════════════════════════════════════════════════════════
 // Main App
 // ═══════════════════════════════════════════════════════════
@@ -512,7 +549,7 @@ export default function App() {
   var [savedAt, setSavedAt] = useState(null);
   var [loading, setLoading] = useState(false);
   var [enterErr, setEnterErr] = useState("");
-  var [tour, setTour] = useState({ phase: "pre", groups: {}, ko: { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null }, vote_locked: false }); // 実結果
+  var [tour, setTour] = useState(overlayOfficial({ phase: "pre", groups: {}, ko: { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null }, vote_locked: false })); // 実結果（確定公式結果を常に上乗せ）
   var [adminOpen, setAdminOpen] = useState(false);
   var [rulesOpen, setRulesOpen] = useState(false);
 
@@ -645,7 +682,7 @@ export default function App() {
     var live = true;
     function load() {
       getTournament()
-        .then(function (t) { if (live && t) setTour(t); })
+        .then(function (t) { if (live) setTour(overlayOfficial(t || {})); })
         .catch(function () { /* ignore */ });
     }
     load();
@@ -2125,28 +2162,15 @@ function AdminPanel({ tour, setTour, close }) {
               </label>
             </div>
 
-            {/* データ同期 */}
+            {/* データ同期（任意）: グループ結果は公式データを自動反映するため通常は不要 */}
             <div style={{ marginBottom: 16, padding: 12, background: "rgba(96,165,250,.06)", borderRadius: 8, border: "1px solid " + $.blue + "40" }}>
-              <div style={{ fontSize: 12, color: $.blueL || $.blue, fontWeight: 700, marginBottom: 4 }}>🔄 データ同期</div>
-              <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>結果がおかしい時の手動操作。手動入力した結果・カードは常に保護されます。</div>
+              <div style={{ fontSize: 12, color: $.blueL || $.blue, fontWeight: 700, marginBottom: 4 }}>🔄 データ同期（任意）</div>
+              <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>グループ結果＋確定済みの決勝Tは自動で反映・ロックされます。下のボタンはDBへ保存したい時だけ使えばOK。</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                <button onClick={loadOfficial} disabled={syncing} style={{ padding: "7px 14px", border: "none", borderRadius: 6, background: syncing ? $.dim : $.gold, color: "#000", fontWeight: 700, cursor: syncing ? "wait" : "pointer", fontSize: 12 }}>📥 公式結果を読み込む（全72試合）</button>
-                <button onClick={reflectResults} disabled={syncing} style={{ padding: "7px 14px", border: "1px solid " + $.pitchL + "80", borderRadius: 6, background: "transparent", color: $.pitchL, fontWeight: 700, cursor: syncing ? "wait" : "pointer", fontSize: 12 }}>♻️ 試合結果を反映（再計算）</button>
-                <button onClick={syncApi} disabled={syncing} style={{ padding: "7px 14px", border: "1px solid " + $.blue + "80", borderRadius: 6, background: "transparent", color: $.blueL || $.blue, fontWeight: 700, cursor: syncing ? "wait" : "pointer", fontSize: 12 }}>📡 API取得（非推奨）</button>
-              </div>
-              <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>
-                <strong style={{ color: $.goldL }}>公式結果を読み込む</strong>＝検証済みのグループ全72試合を一括反映（星取表・各組3位・R32を自動算出）。読み込んだ結果は手動入力扱いで保護されます。<br />
-                <strong>反映（再計算）</strong>＝今ある試合データから星取表を作り直し（重複も自動統合）。<br />
-                <strong>API取得</strong>＝外部API(TheSportsDB)から取り込み。<span style={{ color: $.redL }}>結果が不正確な場合があるため非推奨。</span>
+                <button onClick={loadOfficial} disabled={syncing} style={{ padding: "7px 14px", border: "none", borderRadius: 6, background: syncing ? $.dim : $.gold, color: "#000", fontWeight: 700, cursor: syncing ? "wait" : "pointer", fontSize: 12 }}>📥 公式結果をDBに保存</button>
               </div>
               {syncMsg && <div style={{ fontSize: 11, marginTop: 6, color: syncMsg.startsWith("✓") ? $.pitchL : syncMsg.startsWith("✕") ? $.redL : $.dim }}>{syncMsg}</div>}
             </div>
-
-            {/* 試合結果 手動入力（グループ別リストで一括編集） */}
-            <MatchEditor tour={tour} setTour={setTour} />
-
-            {/* チーム別カード集計（フェアプレー）— チーム毎の累計枚数を直接編集 */}
-            <CardEditor tour={tour} setTour={setTour} />
 
             {/* 決勝トーナメント結果入力（ブラケットで勝者をクリック → そのまま勝ち上がり） */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "4px 0 4px" }}>
