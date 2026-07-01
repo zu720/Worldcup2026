@@ -1258,15 +1258,27 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
   // 敗退チーム（推しチップに取り消し線）: 確定グループで非進出(3位非通過・4位) ＋ KOで敗退した側
   var eliminated = useMemo(function () {
     var s = new Set();
+    // グループ: 全試合終了したグループで、上位2でも上位8の3位でもないチームは敗退。
+    // 保存順に依存しないよう、確実にソートしてから3位/4位を判定。
     Object.keys(GRP).forEach(function (g) {
-      var arr = groupsForScore[g] || [];
-      if (arr.length === 4 && arr.every(function (t) { return (t.mp || 0) >= 3; })) {
-        arr.forEach(function (t, i) { if (i === 3 || (i === 2 && !thirdSet.has(t.n))) s.add(t.n); });
-      }
+      var arr0 = groupsForScore[g] || [];
+      if (arr0.length !== 4 || !arr0.every(function (t) { return (t.mp || 0) >= 3; })) return;
+      var arr = arr0.slice().sort(function (a, b) { return (b.pts || 0) - (a.pts || 0) || ((b.gf || 0) - (b.ga || 0)) - ((a.gf || 0) - (a.ga || 0)) || (b.gf || 0) - (a.gf || 0) || ((b.fp || 0) - (a.fp || 0)) || (FIFA_RANK[a.n] || 999) - (FIFA_RANK[b.n] || 999); });
+      arr.forEach(function (t, i) { if (i >= 2 && !thirdSet.has(t.n)) s.add(t.n); }); // 3位で非通過 or 4位
     });
-    ((tour && tour.ko && tour.ko.matches) || []).forEach(function (m) {
-      if ((m.round || 0) > 3 && m.hs != null && m.as != null) { var L = m.hs > m.as ? m.away : m.as > m.hs ? m.home : null; if (L) s.add(L); }
+    // KO: 各チームの「最新（最高ラウンド）のKO試合」が敗北なら敗退。
+    // ・PK勝ちは win を優先（引き分けスコアでも勝者を正しく扱う）
+    // ・home/away逆順や重複は正規化（dedupe）
+    // ・不正確な自動API混入を避けるため、手動/公式の確定試合のみ信頼
+    var koM = dedupeMatches((tour && tour.ko && tour.ko.matches) || []).filter(function (m) {
+      return (m.round || 0) > 3 && m.hs != null && m.as != null && (m.manual || m.official);
     });
+    var fate = {};
+    koM.forEach(function (m) {
+      var w = m.win || (m.hs > m.as ? m.home : m.as > m.hs ? m.away : null); if (!w) return;
+      [m.home, m.away].forEach(function (tn) { if (!fate[tn] || m.round >= fate[tn].round) fate[tn] = { round: m.round, alive: tn === w }; });
+    });
+    Object.keys(fate).forEach(function (tn) { if (!fate[tn].alive) s.add(tn); });
     return s;
   }, [groupsForScore, thirdSet, tour]);
   // 各メンバーの突破的中/順位的中（確定グループのみ）
