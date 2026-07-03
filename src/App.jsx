@@ -44,6 +44,8 @@ var $ = {
 };
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
+// 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
+var APP_VERSION = "v12";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -963,6 +965,7 @@ function Header({ tab, setTab, nm, score, logout, tour, openAdmin, openRules }) 
         <div className="h-phase" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: phase === "pre" ? $.dim : $.pitchL, padding: "0 10px 6px 0" }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: phase === "pre" ? $.dim : $.pitchL, boxShadow: phase === "pre" ? "none" : "0 0 8px " + $.pitchL, animation: phase === "pre" ? "none" : "pulse 2s ease-in-out infinite", flexShrink: 0 }} />
           <span style={{ fontWeight: 700 }}>大会状況: {phaseLabel}</span>
+          <span title="アプリのバージョン（キャッシュ確認用）" style={{ marginLeft: 8, fontSize: 9, color: $.dim, fontWeight: 700 }}>{APP_VERSION}</span>
         </div>
       </div>
     </header>
