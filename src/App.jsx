@@ -526,17 +526,53 @@ function simBracketOnce(teams, dec, rng) {
   else if (sfLosers.length === 1) res.third = sfLosers[0].n;
   return res;
 }
-// モンテカルロで各参加者の 優勝確率 / 期待順位 / トップ3率 を算出。
+// 参加者の予想(gl上位2)を、基礎点・推し倍率・推し種別・順位ボーナスまで前計算（1回だけ）。
+// これでモンテカルロの各回は掛け算の合算のみになり計算が軽くなる（毎回の作り直しを排除）。
+function precompMember(m, groups) {
+  var picks = [];
+  Object.keys(m.gl || {}).forEach(function (g) {
+    (m.gl[g] || []).slice(0, 2).forEach(function (tn, i) {
+      if (!tn) return; var t = ft(tn); if (!t) return;
+      var dk = (m.des && m.des.A === tn) ? "A" : (m.des && m.des.B === tn) ? "B" : (m.des && m.des.C === tn) ? "C" : null;
+      var rb = 1, st = groups && groups[g];
+      if (st && st.length) { var ai = st.findIndex(function (r) { return r && r.n === tn; }); var played = st.some(function (r) { return (r.mp || 0) > 0; }); if (played && ai === i && ai <= 1) rb = RANK_BONUS[ai]; }
+      picks.push({ tn: tn, b: bsc(t.o), dm: dk ? DES[dk].m : 1, dk: dk, rb: rb });
+    });
+  });
+  return picks;
+}
+// 前計算済みpicksと1回分のシミュ結果(scoring ko)から合計得点を算出（calcScore同等の軽量版）。
+function fastScore(picks, sk) {
+  var total = 0;
+  for (var i = 0; i < picks.length; i++) {
+    var p = picks[i], tn = p.tn, pts = 0;
+    if (sk.r32.indexOf(tn) >= 0) pts += p.b * SM.r32;
+    if (sk.r16.indexOf(tn) >= 0) pts += p.b * SM.r16;
+    if (sk.qf.indexOf(tn) >= 0) pts += p.b * SM.qf;
+    if (sk.sf.indexOf(tn) >= 0) pts += p.b * SM.sf;
+    if (sk.final.indexOf(tn) >= 0) pts += p.b * SM.final;
+    if (sk.champ === tn) pts += p.b * SM.champ;
+    if (sk.third === tn) pts += p.b * SM.third;
+    var fp = pts * p.dm;
+    if (p.dk && sk.final.indexOf(tn) >= 0) fp *= DES[p.dk].fb;
+    if (p.dk && sk.champ === tn) fp *= DES[p.dk].cb;
+    total += fp * p.rb;
+  }
+  return total;
+}
+// モンテカルロで各参加者の 優勝確率 / 期待順位 / トップ3率 を算出。確定済みの試合は固定。
 function computeRankProbs(members, teams, dec, groups, N) {
   var part = []; Object.keys(GRP).forEach(function (g) { var a = groups[g] || []; if (a.some(function (t) { return (t.mp || 0) > 0; })) a.slice(0, 2).forEach(function (t) { if (t && t.n) part.push(t.n); }); });
+  var pre = members.map(function (m) { return { name: m.name, picks: precompMember(m, groups) }; });
   var agg = {}; members.forEach(function (m) { agg[m.name] = { first: 0, rankSum: 0, top3: 0 }; });
   var rng = Math.random;
+  var scored = pre.map(function (p) { return { name: p.name, total: 0 }; });
   for (var s = 0; s < N; s++) {
     var br = simBracketOnce(teams, dec, rng);
     var sk = { r32: part, r16: br.r32, qf: br.r16, sf: br.qf, final: br.sf, champ: br.champ, third: br.third };
-    var scored = members.map(function (m) { return { name: m.name, total: calcScore(m.gl, m.des, sk, groups).total }; });
+    for (var j = 0; j < pre.length; j++) { scored[j].total = fastScore(pre[j].picks, sk); }
     scored.sort(function (a, b) { return b.total - a.total; });
-    scored.forEach(function (x, idx) { var a = agg[x.name], rank = idx + 1; if (rank === 1) a.first++; a.rankSum += rank; if (rank <= 3) a.top3++; });
+    for (var r = 0; r < scored.length; r++) { var a = agg[scored[r].name], rank = r + 1; if (rank === 1) a.first++; a.rankSum += rank; if (rank <= 3) a.top3++; }
   }
   var out = {}; members.forEach(function (m) { var a = agg[m.name]; out[m.name] = { champ: a.first / N, expRank: a.rankSum / N, top3: a.top3 / N }; });
   return out;
@@ -1413,7 +1449,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
               var teams = [];
               (liveR32.leftRes || []).concat(liveR32.rightRes || []).forEach(function (mm) { (mm.teams || []).forEach(function (t) { teams.push({ n: t.n, o: t.o }); }); });
               var mem = rows.filter(function (r) { return r && r.gl; }).map(function (r) { return { name: r.name, gl: r.gl, des: r.des }; });
-              var p = computeRankProbs(mem, teams, (tour && tour.ko) || {}, groupsForScore, 3000);
+              var p = computeRankProbs(mem, teams, (tour && tour.ko) || {}, groupsForScore, 2000);
               setProbs(p);
             } catch (e) { /* ignore */ }
             setProbBusy(false);
@@ -1441,7 +1477,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
               <button disabled={!simReady || probBusy} onClick={runProbs}
                 style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simReady && !probBusy) ? "pointer" : "default", opacity: (simReady && !probBusy) ? 1 : .45, border: "1px solid " + $.blue + "80", background: "rgba(96,165,250,.12)", color: $.blueL || $.blue }}>{probBusy ? "計算中…" : (probs ? "🎲 再計算" : "🎲 優勝確率・期待順位を計算")}</button>
               {probs && <button onClick={function () { setProbs(null); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + $.border, background: "transparent", color: $.dim }}>✕ 確率表示を消す</button>}
-              <span style={{ fontSize: 9, color: $.dim }}>残り試合を<b>優勝オッズの勝率</b>で3000回シミュレーション。確定済みの結果は固定。各行に👑優勝%・期待順位を表示。</span>
+              <span style={{ fontSize: 9, color: $.dim }}>残り試合を<b>優勝オッズの勝率</b>で2000回シミュレーション。確定済みの結果は固定。各行に👑優勝%・期待順位を表示。</span>
             </div>
             {!simReady && <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>※ グループ全結果が入りR32が確定すると使えます。</div>}
           </div>
@@ -1503,7 +1539,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 </div>
                 <div className="lb-range" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, flexShrink: 0, whiteSpace: "nowrap" }}>
                   {rr && <span title="まだ可能性のある最終順位（最高〜最低）" style={{ fontSize: 13, fontWeight: 800, color: rr.best === 1 ? $.goldL : $.txt2, lineHeight: 1.1 }}>{rr.best === rr.worst ? rr.best + "位" : rr.best + "-" + rr.worst + "位"}</span>}
-                  {pr && <span title="優勝確率 ・ 期待順位（3000回シミュレーション）" style={{ fontSize: 10, fontWeight: 700, color: $.blueL || $.blue }}>👑{(pr.champ * 100).toFixed(pr.champ >= 0.1 ? 0 : 1)}% <span style={{ color: $.dim, fontWeight: 400 }}>期待{pr.expRank.toFixed(1)}位</span></span>}
+                  {pr && <span title="優勝確率 ・ 期待順位（2000回シミュレーション・確定分は固定）" style={{ fontSize: 10, fontWeight: 700, color: $.blueL || $.blue }}>👑{(pr.champ * 100).toFixed(pr.champ >= 0.1 ? 0 : 1)}% <span style={{ color: $.dim, fontWeight: 400 }}>期待{pr.expRank.toFixed(1)}位</span></span>}
                 </div>
                 <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", alignItems: "baseline", gap: 3, flexShrink: 0 }}>
                   <div style={{ fontFamily: fontH, fontSize: 17, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
