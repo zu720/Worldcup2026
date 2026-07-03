@@ -45,7 +45,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v15";
+var APP_VERSION = "v16";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -566,34 +566,32 @@ function fastScore(picks, sk) {
 }
 // スコアリング用ko(sk)を1回分のブラケット結果から作る。
 function toSk(br, part) { return { r32: part, r16: br.r32, qf: br.r16, sf: br.qf, final: br.sf, champ: br.champ, third: br.third }; }
-// 2通りの順位を算出:
+// 2通りの順位を算出（どちらも上から1位・2位…と連番で振る）:
 //  chalk = 残りを「本命(低オッズ)が全部勝つ」とした確定シナリオでの順位
-//  med   = 2000回シミュレーション（勝率で番狂わせも起きる）した順位の中央値
+//  sim   = 2000回シミュレーション（勝率で番狂わせも起きる）の平均順位(期待値)で並べた順位
 function computeRankViews(members, teams, dec, groups, N) {
   var part = []; Object.keys(GRP).forEach(function (g) { var a = groups[g] || []; if (a.some(function (t) { return (t.mp || 0) > 0; })) a.slice(0, 2).forEach(function (t) { if (t && t.n) part.push(t.n); }); });
   var pre = members.map(function (m) { return { name: m.name, picks: precompMember(m, groups) }; });
-  var M = members.length;
   // --- chalk（本命どおり）---
   var chalkSk = toSk(simBracketOnce(teams, dec, null, true), part);
   var cs = pre.map(function (p) { return { name: p.name, total: fastScore(p.picks, chalkSk) }; });
   cs.sort(function (a, b) { return b.total - a.total; });
   var chalkRank = {}; cs.forEach(function (x, i) { chalkRank[x.name] = i + 1; });
-  // --- シミュ（2000回・中央値）---
-  var counts = {}; members.forEach(function (m) { counts[m.name] = new Array(M + 2).fill(0); });
+  // --- シミュ（2000回）: 各回の順位を平均(期待値)し、それで並べて連番を振る ---
+  var sum = {}; members.forEach(function (m) { sum[m.name] = 0; });
   var rng = Math.random;
   var scored = pre.map(function (p) { return { name: p.name, total: 0 }; });
   for (var s = 0; s < N; s++) {
     var sk = toSk(simBracketOnce(teams, dec, rng, false), part);
     for (var j = 0; j < pre.length; j++) { scored[j].total = fastScore(pre[j].picks, sk); }
     scored.sort(function (a, b) { return b.total - a.total; });
-    for (var r = 0; r < scored.length; r++) { counts[scored[r].name][r + 1]++; }
+    for (var r = 0; r < scored.length; r++) { sum[scored[r].name] += r + 1; }
   }
-  var out = {}, half = N / 2;
-  members.forEach(function (m) {
-    var c = counts[m.name], acc = 0, med = M;
-    for (var rr = 1; rr <= M; rr++) { acc += c[rr]; if (acc >= half) { med = rr; break; } }
-    out[m.name] = { chalk: chalkRank[m.name], med: med };
-  });
+  var expRank = {}; members.forEach(function (m) { expRank[m.name] = sum[m.name] / N; });
+  var order = members.map(function (m) { return m.name; }).sort(function (a, b) { return expRank[a] - expRank[b] || chalkRank[a] - chalkRank[b]; });
+  var simPos = {}; order.forEach(function (nm, i) { simPos[nm] = i + 1; });
+  var out = {};
+  members.forEach(function (m) { out[m.name] = { chalk: chalkRank[m.name], sim: simPos[m.name], exp: expRank[m.name] }; });
   return out;
 }
 
@@ -1509,7 +1507,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 return <button key={o[0]} onClick={function () { setSortMode(o[0]); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + (on ? $.blue : $.border), background: on ? "rgba(96,165,250,.16)" : "transparent", color: on ? ($.blueL || $.blue) : $.dim }}>{o[1]}</button>;
               })}
               {probs && <button onClick={function () { setProbs(null); setSortMode("score"); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + $.border, background: "transparent", color: $.dim }}>✕ 消す</button>}
-              <span style={{ fontSize: 9, color: $.dim }}>残り<b>{remainMatches}試合</b>＝<b>約{combosLabel}通り</b>。<b style={{ color: $.goldL }}>本命</b>=残りは低オッズ側が全勝した場合の順位。<b style={{ color: $.blueL || $.blue }}>シミュ</b>=勝率で2000回試した順位の中央値（番狂わせ込み）。確定分は固定。</span>
+              <span style={{ fontSize: 9, color: $.dim }}>残り<b>{remainMatches}試合</b>＝<b>約{combosLabel}通り</b>。<b style={{ color: $.goldL }}>本命</b>=残りは低オッズ側が全勝した場合の順位。<b style={{ color: $.blueL || $.blue }}>シミュ</b>=勝率で2000回試した平均順位で並べた順位（番狂わせ込み・上から1位…）。確定分は固定。</span>
             </div>
             {!simReady && <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>※ グループ全結果が入りR32が確定すると使えます。</div>}
           </div>
@@ -1529,7 +1527,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         var listRows = (probs && (sortMode === "sim" || sortMode === "chalk"))
           ? rows.slice().sort(function (a, b) {
               var pa = probs[a.name] || {}, pb = probs[b.name] || {};
-              var key = sortMode === "chalk" ? "chalk" : "med";
+              var key = sortMode === "chalk" ? "chalk" : "sim";
               return (pa[key] || 999) - (pb[key] || 999) || b.score.total - a.score.total;
             })
           : rows;
@@ -1581,7 +1579,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                   {rr && <span title="まだ可能性のある最終順位（最高〜最低）" style={{ fontSize: 13, fontWeight: 800, color: rr.best === 1 ? $.goldL : $.txt2, lineHeight: 1.1 }}>{rr.best === rr.worst ? rr.best + "位" : rr.best + "-" + rr.worst + "位"}</span>}
                   {pr && <span style={{ fontSize: 10, fontWeight: 700, display: "flex", gap: 6, whiteSpace: "nowrap" }}>
                     <span title="本命どおり（残りは低オッズ側が全勝）した場合の順位" style={{ color: $.goldL }}>本命{pr.chalk}位</span>
-                    <span title="2000回シミュレーションした順位の中央値（番狂わせ込み）" style={{ color: $.blueL || $.blue }}>シミュ{pr.med}位</span>
+                    <span title={"2000回シミュレーションの平均順位で並べた順位（番狂わせ込み・平均 " + (pr.exp ? pr.exp.toFixed(1) : "-") + "位）"} style={{ color: $.blueL || $.blue }}>シミュ{pr.sim}位</span>
                   </span>}
                 </div>
                 <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", alignItems: "baseline", gap: 3, flexShrink: 0 }}>
