@@ -45,7 +45,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v12";
+var APP_VERSION = "v13";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -499,9 +499,10 @@ function optimizeBracket(member, leftRes, rightRes, groups, maximize, ko) {
 function shuffle(arr){var a=arr.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var tmp=a[i];a[i]=a[j];a[j]=tmp;}return a;}
 function generateRandom(mode){var gl2={};Object.keys(GRP).forEach(function(g){var teams=GRP[g].slice();teams.sort(function(a,b){return a.o-b.o;});if(mode==="safe"){var second=shuffle(teams.slice(1,3))[0];gl2[g]=[teams[0].n,second.n];}else if(mode==="upset"){var weak=shuffle(teams.slice(1));gl2[g]=[weak[0].n,weak[1].n];}else{var rest=shuffle(teams.slice(1));gl2[g]=[teams[0].n,rest[0].n];}});var pool=[];Object.values(gl2).forEach(function(a){a.forEach(function(n){var t=ft(n);if(t)pool.push(t);});});var des2={A:null,B:null,C:null};if(pool.length>=3){pool.sort(function(a,b){return a.o-b.o;});var n=pool.length,picks;if(mode==="upset"){var hi=pool.slice(Math.floor(n/2));picks=shuffle(hi).slice(0,3);}else if(mode==="safe"){var lo=pool.slice(0,Math.max(6,Math.ceil(n/2)));picks=shuffle(lo).slice(0,3);}else{picks=shuffle(pool).slice(0,3);}des2.A=(picks[0]||{}).n||null;des2.B=(picks[1]||{}).n||null;des2.C=(picks[2]||{}).n||null;}return{gl:gl2,des:des2};}
 
-// KOの勝率。優勝オッズの逆数比から算出（低オッズ=本命ほど高勝率）。
-// ※基礎点は大穴ほど高い＝強さの逆なので、そのまま勝率には使わない。
-function winProb(oA, oB) { var a = 1 / Math.max(oA || 100, 1.01), b = 1 / Math.max(oB || 100, 1.01); return a / (a + b); }
+// KOの勝率。優勝オッズ由来の実力を「1試合用」に補正して算出。
+// 優勝オッズは"7試合勝ち抜く"確率なので、そのまま逆数比にすると単一試合には極端すぎる。
+// 実力 s=(1/odds)^0.5 で圧縮し、P(A)=sA/(sA+sB)。本命は勝ちやすいが番狂わせも起きる現実的な値に。
+function winProb(oA, oB) { var a = Math.sqrt(1 / Math.max(oA || 100, 1.01)), b = Math.sqrt(1 / Math.max(oB || 100, 1.01)); return a / (a + b); }
 // 現在のブラケット(dec=確定結果)を尊重し、残りをオッズ勝率でランダム消化して1回分の結果を返す。
 // teams=R32の32チーム(ブラケット順, {n,o})。dec=bracket意味のko(各ラウンドの勝者)。
 function simBracketOnce(teams, dec, rng) {
@@ -1440,6 +1441,11 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
       {/* 決勝T試算: 参加者を選んで、その人が最高/最低順位になる勝ち上がりを反映 */}
       {rows.length > 0 && (function () {
         var simReady = (liveR32.leftRes || []).concat(liveR32.rightRes || []).reduce(function (a, m) { return a + (m.teams || []).length; }, 0) === 32;
+        // 残りの未確定試合数 → 起こりうる組み合わせ数(2^n)
+        var dko = (tour && tour.ko) || {};
+        var remainMatches = Math.max(0, 16 - (dko.r32 || []).length) + Math.max(0, 8 - (dko.r16 || []).length) + Math.max(0, 4 - (dko.qf || []).length) + Math.max(0, 2 - (dko.sf || []).length) + (dko.champ ? 0 : 1) + (dko.third ? 0 : 1);
+        var combos = Math.pow(2, remainMatches);
+        var combosLabel = combos >= 1e8 ? (combos / 1e8).toFixed(1).replace(/\.0$/, "") + "億" : combos >= 1e4 ? Math.round(combos / 1e4) + "万" : String(combos);
         var runSim = function (maximize) {
           var m = rows.find(function (x) { return x.name === simName; }); if (!m) return;
           var ko = optimizeBracket(m, liveR32.leftRes, liveR32.rightRes, groupsForScore, maximize, (tour && tour.ko) || {});
@@ -1480,14 +1486,14 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
             {/* 順位確率（モンテカルロ） */}
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + $.border, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <button disabled={!simReady || probBusy} onClick={runProbs}
-                style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simReady && !probBusy) ? "pointer" : "default", opacity: (simReady && !probBusy) ? 1 : .45, border: "1px solid " + $.blue + "80", background: "rgba(96,165,250,.12)", color: $.blueL || $.blue }}>{probBusy ? "計算中…" : (probs ? "🎲 再計算" : "🎲 優勝確率・期待順位を計算")}</button>
+                style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simReady && !probBusy) ? "pointer" : "default", opacity: (simReady && !probBusy) ? 1 : .45, border: "1px solid " + $.blue + "80", background: "rgba(96,165,250,.12)", color: $.blueL || $.blue }}>{probBusy ? "計算中…" : (probs ? "🎲 再計算" : "🎲 期待順位を計算")}</button>
               {probs && <span style={{ fontSize: 10, color: $.dim, fontWeight: 700 }}>並び:</span>}
-              {probs && [["score", "得点順"], ["exp", "期待順位順"], ["champ", "優勝%順"]].map(function (o) {
+              {probs && [["score", "得点順"], ["exp", "期待順位順"]].map(function (o) {
                 var on = sortMode === o[0];
                 return <button key={o[0]} onClick={function () { setSortMode(o[0]); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + (on ? $.blue : $.border), background: on ? "rgba(96,165,250,.16)" : "transparent", color: on ? ($.blueL || $.blue) : $.dim }}>{o[1]}</button>;
               })}
               {probs && <button onClick={function () { setProbs(null); setSortMode("score"); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + $.border, background: "transparent", color: $.dim }}>✕ 消す</button>}
-              <span style={{ fontSize: 9, color: $.dim }}>残り試合を<b>優勝オッズの勝率</b>で2000回シミュレーション。確定済みの結果は固定。<b>優勝%順と期待順位順は別物</b>（👑=優勝しやすさ／期待順位=総合的な上位安定度）。</span>
+              <span style={{ fontSize: 9, color: $.dim }}>残り<b>{remainMatches}試合</b>＝起こりうる組み合わせ<b>約{combosLabel}通り</b>。オッズ由来の勝率(1試合用に補正)で2000回シミュレーションし、各人の<b>期待順位</b>（平均順位）を算出。確定分は固定。</span>
             </div>
             {!simReady && <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>※ グループ全結果が入りR32が確定すると使えます。</div>}
           </div>
@@ -1504,11 +1510,10 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
 
       {rows.length > 0 && (function () {
         // 並べ替え（🎲計算後）。exp=期待順位(小さいほど上)/champ=優勝%(高いほど上)/score=得点。
-        var listRows = (probs && sortMode !== "score")
+        var listRows = (probs && sortMode === "exp")
           ? rows.slice().sort(function (a, b) {
               var pa = probs[a.name] || {}, pb = probs[b.name] || {};
-              if (sortMode === "champ") return (pb.champ || 0) - (pa.champ || 0) || (pa.expRank || 999) - (pb.expRank || 999) || b.score.total - a.score.total;
-              return (pa.expRank || 999) - (pb.expRank || 999) || (pb.champ || 0) - (pa.champ || 0) || b.score.total - a.score.total;
+              return (pa.expRank || 999) - (pb.expRank || 999) || b.score.total - a.score.total;
             })
           : rows;
         var renderRow = function (r, i) {
@@ -1557,7 +1562,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 </div>
                 <div className="lb-range" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, flexShrink: 0, whiteSpace: "nowrap" }}>
                   {rr && <span title="まだ可能性のある最終順位（最高〜最低）" style={{ fontSize: 13, fontWeight: 800, color: rr.best === 1 ? $.goldL : $.txt2, lineHeight: 1.1 }}>{rr.best === rr.worst ? rr.best + "位" : rr.best + "-" + rr.worst + "位"}</span>}
-                  {pr && <span title="優勝確率 ・ 期待順位（2000回シミュレーション・確定分は固定）" style={{ fontSize: 10, fontWeight: 700, color: $.blueL || $.blue }}>👑{(pr.champ * 100).toFixed(pr.champ >= 0.1 ? 0 : 1)}% <span style={{ color: $.dim, fontWeight: 400 }}>期待{pr.expRank.toFixed(1)}位</span></span>}
+                  {pr && <span title="期待順位（残り試合を勝率でシミュレーションした平均順位・確定分は固定）" style={{ fontSize: 11, fontWeight: 700, color: $.blueL || $.blue }}>期待 {pr.expRank.toFixed(1)}位</span>}
                 </div>
                 <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", alignItems: "baseline", gap: 3, flexShrink: 0 }}>
                   <div style={{ fontFamily: fontH, fontSize: 17, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
