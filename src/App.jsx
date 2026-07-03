@@ -45,7 +45,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v14";
+var APP_VERSION = "v15";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -505,7 +505,9 @@ function generateRandom(mode){var gl2={};Object.keys(GRP).forEach(function(g){va
 function winProb(oA, oB) { var a = Math.sqrt(1 / Math.max(oA || 100, 1.01)), b = Math.sqrt(1 / Math.max(oB || 100, 1.01)); return a / (a + b); }
 // 現在のブラケット(dec=確定結果)を尊重し、残りをオッズ勝率でランダム消化して1回分の結果を返す。
 // teams=R32の32チーム(ブラケット順, {n,o})。dec=bracket意味のko(各ラウンドの勝者)。
-function simBracketOnce(teams, dec, rng) {
+// favWins=true なら未確定はオッズが低い方(本命)が必ず勝つ（確定的な「本命どおり」ブラケット）。
+function simBracketOnce(teams, dec, rng, favWins) {
+  var pick = function (a, b) { return favWins ? (a.o <= b.o ? a : b) : (rng() < winProb(a.o, b.o) ? a : b); };
   var res = { r32: [], r16: [], qf: [], sf: [], final: [], champ: null, third: null };
   var keyBy = { 16: "r32", 8: "r16", 4: "qf", 2: "sf" };
   var level = teams.slice(), sfLosers = [];
@@ -513,7 +515,7 @@ function simBracketOnce(teams, dec, rng) {
     var key = keyBy[level.length / 2], next = [];
     for (var i = 0; i < level.length; i += 2) {
       var a = level[i], b = level[i + 1], da = dec[key] || [];
-      var w = da.indexOf(a.n) >= 0 ? a : da.indexOf(b.n) >= 0 ? b : (rng() < winProb(a.o, b.o) ? a : b);
+      var w = da.indexOf(a.n) >= 0 ? a : da.indexOf(b.n) >= 0 ? b : pick(a, b);
       var l = w === a ? b : a;
       next.push(w); res[key].push(w.n);
       if (key === "sf") sfLosers.push(l);
@@ -522,10 +524,9 @@ function simBracketOnce(teams, dec, rng) {
   }
   var fa = level[0], fb = level[1] || level[0];
   res.final = level.map(function (t) { return t.n; });
-  var champT = dec.champ ? (fa.n === dec.champ ? fa : fb.n === dec.champ ? fb : (rng() < winProb(fa.o, fb.o) ? fa : fb)) : (rng() < winProb(fa.o, fb.o) ? fa : fb);
-  res.champ = champT.n;
+  res.champ = (dec.champ ? (fa.n === dec.champ ? fa : fb.n === dec.champ ? fb : pick(fa, fb)) : pick(fa, fb)).n;
   if (dec.third) res.third = dec.third;
-  else if (sfLosers.length === 2) res.third = (rng() < winProb(sfLosers[0].o, sfLosers[1].o) ? sfLosers[0] : sfLosers[1]).n;
+  else if (sfLosers.length === 2) res.third = pick(sfLosers[0], sfLosers[1]).n;
   else if (sfLosers.length === 1) res.third = sfLosers[0].n;
   return res;
 }
@@ -539,9 +540,7 @@ function precompMember(m, groups) {
       var dk = (m.des && m.des.A === tn) ? "A" : (m.des && m.des.B === tn) ? "B" : (m.des && m.des.C === tn) ? "C" : null;
       var rb = 1, st = groups && groups[g];
       if (st && st.length) { var ai = st.findIndex(function (r) { return r && r.n === tn; }); var played = st.some(function (r) { return (r.mp || 0) > 0; }); if (played && ai === i && ai <= 1) rb = RANK_BONUS[ai]; }
-      // B: 大穴の効きを弱める。sim採点の基礎点を圧縮（b^SIM_BASE_DAMP）。
-      // 基礎点=オッズ^0.4 のままだと大穴一発が支配的なので、順位予測では圧縮して現実寄りに。
-      picks.push({ tn: tn, b: Math.pow(bsc(t.o), SIM_BASE_DAMP), dm: dk ? DES[dk].m : 1, dk: dk, rb: rb });
+      picks.push({ tn: tn, b: bsc(t.o), dm: dk ? DES[dk].m : 1, dk: dk, rb: rb });
     });
   });
   return picks;
@@ -565,20 +564,26 @@ function fastScore(picks, sk) {
   }
   return total;
 }
-// B: sim採点の基礎点を圧縮する指数（大穴の効きを弱める）。1=無補正、小さいほど圧縮強。
-var SIM_BASE_DAMP = 0.6;
-// モンテカルロで各参加者の「中央値順位」を算出。確定済みの試合は固定。
-// 期待値(平均)は大穴の一発に引っ張られるため、中央値=ふつうに起きる順位を使う。
-function computeRankProbs(members, teams, dec, groups, N) {
+// スコアリング用ko(sk)を1回分のブラケット結果から作る。
+function toSk(br, part) { return { r32: part, r16: br.r32, qf: br.r16, sf: br.qf, final: br.sf, champ: br.champ, third: br.third }; }
+// 2通りの順位を算出:
+//  chalk = 残りを「本命(低オッズ)が全部勝つ」とした確定シナリオでの順位
+//  med   = 2000回シミュレーション（勝率で番狂わせも起きる）した順位の中央値
+function computeRankViews(members, teams, dec, groups, N) {
   var part = []; Object.keys(GRP).forEach(function (g) { var a = groups[g] || []; if (a.some(function (t) { return (t.mp || 0) > 0; })) a.slice(0, 2).forEach(function (t) { if (t && t.n) part.push(t.n); }); });
   var pre = members.map(function (m) { return { name: m.name, picks: precompMember(m, groups) }; });
   var M = members.length;
-  var counts = {}; members.forEach(function (m) { counts[m.name] = new Array(M + 2).fill(0); }); // rank別出現数(中央値用)
+  // --- chalk（本命どおり）---
+  var chalkSk = toSk(simBracketOnce(teams, dec, null, true), part);
+  var cs = pre.map(function (p) { return { name: p.name, total: fastScore(p.picks, chalkSk) }; });
+  cs.sort(function (a, b) { return b.total - a.total; });
+  var chalkRank = {}; cs.forEach(function (x, i) { chalkRank[x.name] = i + 1; });
+  // --- シミュ（2000回・中央値）---
+  var counts = {}; members.forEach(function (m) { counts[m.name] = new Array(M + 2).fill(0); });
   var rng = Math.random;
   var scored = pre.map(function (p) { return { name: p.name, total: 0 }; });
   for (var s = 0; s < N; s++) {
-    var br = simBracketOnce(teams, dec, rng);
-    var sk = { r32: part, r16: br.r32, qf: br.r16, sf: br.qf, final: br.sf, champ: br.champ, third: br.third };
+    var sk = toSk(simBracketOnce(teams, dec, rng, false), part);
     for (var j = 0; j < pre.length; j++) { scored[j].total = fastScore(pre[j].picks, sk); }
     scored.sort(function (a, b) { return b.total - a.total; });
     for (var r = 0; r < scored.length; r++) { counts[scored[r].name][r + 1]++; }
@@ -586,8 +591,8 @@ function computeRankProbs(members, teams, dec, groups, N) {
   var out = {}, half = N / 2;
   members.forEach(function (m) {
     var c = counts[m.name], acc = 0, med = M;
-    for (var r = 1; r <= M; r++) { acc += c[r]; if (acc >= half) { med = r; break; } }
-    out[m.name] = { medRank: med };
+    for (var rr = 1; rr <= M; rr++) { acc += c[rr]; if (acc >= half) { med = rr; break; } }
+    out[m.name] = { chalk: chalkRank[m.name], med: med };
   });
   return out;
 }
@@ -1470,9 +1475,9 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
               var teams = [];
               (liveR32.leftRes || []).concat(liveR32.rightRes || []).forEach(function (mm) { (mm.teams || []).forEach(function (t) { teams.push({ n: t.n, o: t.o }); }); });
               var mem = rows.filter(function (r) { return r && r.gl; }).map(function (r) { return { name: r.name, gl: r.gl, des: r.des }; });
-              var p = computeRankProbs(mem, teams, (tour && tour.ko) || {}, groupsForScore, 2000);
+              var p = computeRankViews(mem, teams, (tour && tour.ko) || {}, groupsForScore, 2000);
               setProbs(p);
-              setSortMode("exp"); // 計算したら期待順位順に並べ替え
+              setSortMode("sim"); // 計算したらシミュ順に並べ替え
             } catch (e) { /* ignore */ }
             setProbBusy(false);
           }, 30);
@@ -1497,14 +1502,14 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
             {/* 順位確率（モンテカルロ） */}
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + $.border, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <button disabled={!simReady || probBusy} onClick={runProbs}
-                style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simReady && !probBusy) ? "pointer" : "default", opacity: (simReady && !probBusy) ? 1 : .45, border: "1px solid " + $.blue + "80", background: "rgba(96,165,250,.12)", color: $.blueL || $.blue }}>{probBusy ? "計算中…" : (probs ? "🎲 再計算" : "🎲 中央順位を計算")}</button>
+                style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simReady && !probBusy) ? "pointer" : "default", opacity: (simReady && !probBusy) ? 1 : .45, border: "1px solid " + $.blue + "80", background: "rgba(96,165,250,.12)", color: $.blueL || $.blue }}>{probBusy ? "計算中…" : (probs ? "🎲 再計算" : "🎲 順位を予測（本命／シミュ）")}</button>
               {probs && <span style={{ fontSize: 10, color: $.dim, fontWeight: 700 }}>並び:</span>}
-              {probs && [["score", "得点順"], ["exp", "中央順位順"]].map(function (o) {
+              {probs && [["score", "得点順"], ["chalk", "本命順"], ["sim", "シミュ順"]].map(function (o) {
                 var on = sortMode === o[0];
                 return <button key={o[0]} onClick={function () { setSortMode(o[0]); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + (on ? $.blue : $.border), background: on ? "rgba(96,165,250,.16)" : "transparent", color: on ? ($.blueL || $.blue) : $.dim }}>{o[1]}</button>;
               })}
               {probs && <button onClick={function () { setProbs(null); setSortMode("score"); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + $.border, background: "transparent", color: $.dim }}>✕ 消す</button>}
-              <span style={{ fontSize: 9, color: $.dim }}>残り<b>{remainMatches}試合</b>＝組み合わせ<b>約{combosLabel}通り</b>。オッズ由来の勝率(1試合用に補正)で2000回シミュレーションし、各人の<b>中央値順位</b>（ふつうに落ち着く順位）を算出。大穴の効きは弱めて現実寄りに。確定分は固定。</span>
+              <span style={{ fontSize: 9, color: $.dim }}>残り<b>{remainMatches}試合</b>＝<b>約{combosLabel}通り</b>。<b style={{ color: $.goldL }}>本命</b>=残りは低オッズ側が全勝した場合の順位。<b style={{ color: $.blueL || $.blue }}>シミュ</b>=勝率で2000回試した順位の中央値（番狂わせ込み）。確定分は固定。</span>
             </div>
             {!simReady && <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>※ グループ全結果が入りR32が確定すると使えます。</div>}
           </div>
@@ -1521,10 +1526,11 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
 
       {rows.length > 0 && (function () {
         // 並べ替え（🎲計算後）。exp=期待順位(小さいほど上)/champ=優勝%(高いほど上)/score=得点。
-        var listRows = (probs && sortMode === "exp")
+        var listRows = (probs && (sortMode === "sim" || sortMode === "chalk"))
           ? rows.slice().sort(function (a, b) {
               var pa = probs[a.name] || {}, pb = probs[b.name] || {};
-              return (pa.medRank || 999) - (pb.medRank || 999) || b.score.total - a.score.total;
+              var key = sortMode === "chalk" ? "chalk" : "med";
+              return (pa[key] || 999) - (pb[key] || 999) || b.score.total - a.score.total;
             })
           : rows;
         var renderRow = function (r, i) {
@@ -1573,7 +1579,10 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 </div>
                 <div className="lb-range" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, flexShrink: 0, whiteSpace: "nowrap" }}>
                   {rr && <span title="まだ可能性のある最終順位（最高〜最低）" style={{ fontSize: 13, fontWeight: 800, color: rr.best === 1 ? $.goldL : $.txt2, lineHeight: 1.1 }}>{rr.best === rr.worst ? rr.best + "位" : rr.best + "-" + rr.worst + "位"}</span>}
-                  {pr && <span title="中央値順位（残り試合をシミュレーションした時、ふつうに落ち着く順位。大穴補正あり・確定分は固定）" style={{ fontSize: 11, fontWeight: 700, color: $.blueL || $.blue }}>中央 {pr.medRank}位</span>}
+                  {pr && <span style={{ fontSize: 10, fontWeight: 700, display: "flex", gap: 6, whiteSpace: "nowrap" }}>
+                    <span title="本命どおり（残りは低オッズ側が全勝）した場合の順位" style={{ color: $.goldL }}>本命{pr.chalk}位</span>
+                    <span title="2000回シミュレーションした順位の中央値（番狂わせ込み）" style={{ color: $.blueL || $.blue }}>シミュ{pr.med}位</span>
+                  </span>}
                 </div>
                 <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", alignItems: "baseline", gap: 3, flexShrink: 0 }}>
                   <div style={{ fontFamily: fontH, fontSize: 17, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
