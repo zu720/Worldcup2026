@@ -1478,9 +1478,13 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed " + $.border, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <button disabled={!simReady || probBusy} onClick={runProbs}
                 style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simReady && !probBusy) ? "pointer" : "default", opacity: (simReady && !probBusy) ? 1 : .45, border: "1px solid " + $.blue + "80", background: "rgba(96,165,250,.12)", color: $.blueL || $.blue }}>{probBusy ? "計算中…" : (probs ? "🎲 再計算" : "🎲 優勝確率・期待順位を計算")}</button>
-              {probs && <button onClick={function () { setSortMode(sortMode === "exp" ? "score" : "exp"); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + (sortMode === "exp" ? $.blue : $.border), background: sortMode === "exp" ? "rgba(96,165,250,.14)" : "transparent", color: sortMode === "exp" ? ($.blueL || $.blue) : $.dim }}>{sortMode === "exp" ? "↕ 並び: 期待順位順" : "↕ 並び: 得点順"}</button>}
+              {probs && <span style={{ fontSize: 10, color: $.dim, fontWeight: 700 }}>並び:</span>}
+              {probs && [["score", "得点順"], ["exp", "期待順位順"], ["champ", "優勝%順"]].map(function (o) {
+                var on = sortMode === o[0];
+                return <button key={o[0]} onClick={function () { setSortMode(o[0]); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + (on ? $.blue : $.border), background: on ? "rgba(96,165,250,.16)" : "transparent", color: on ? ($.blueL || $.blue) : $.dim }}>{o[1]}</button>;
+              })}
               {probs && <button onClick={function () { setProbs(null); setSortMode("score"); }} style={{ fontSize: 11, fontWeight: 700, padding: "7px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid " + $.border, background: "transparent", color: $.dim }}>✕ 消す</button>}
-              <span style={{ fontSize: 9, color: $.dim }}>残り試合を<b>優勝オッズの勝率</b>で2000回シミュレーション。確定済みの結果は固定。計算すると<b>期待順位順に並べ替え</b>ます。</span>
+              <span style={{ fontSize: 9, color: $.dim }}>残り試合を<b>優勝オッズの勝率</b>で2000回シミュレーション。確定済みの結果は固定。<b>優勝%順と期待順位順は別物</b>（👑=優勝しやすさ／期待順位=総合的な上位安定度）。</span>
             </div>
             {!simReady && <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>※ グループ全結果が入りR32が確定すると使えます。</div>}
           </div>
@@ -1496,12 +1500,12 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
       )}
 
       {rows.length > 0 && (function () {
-        // 期待順位順の並べ替え（🎲計算後）。期待順位=小さいほど上位、同値は得点で。
-        var listRows = (sortMode === "exp" && probs)
+        // 並べ替え（🎲計算後）。exp=期待順位(小さいほど上)/champ=優勝%(高いほど上)/score=得点。
+        var listRows = (probs && sortMode !== "score")
           ? rows.slice().sort(function (a, b) {
-              var pa = probs[a.name], pb = probs[b.name];
-              var ea = pa ? pa.expRank : 999, eb = pb ? pb.expRank : 999;
-              return ea - eb || b.score.total - a.score.total;
+              var pa = probs[a.name] || {}, pb = probs[b.name] || {};
+              if (sortMode === "champ") return (pb.champ || 0) - (pa.champ || 0) || (pa.expRank || 999) - (pb.expRank || 999) || b.score.total - a.score.total;
+              return (pa.expRank || 999) - (pb.expRank || 999) || (pb.champ || 0) - (pa.champ || 0) || b.score.total - a.score.total;
             })
           : rows;
         var renderRow = function (r, i) {
