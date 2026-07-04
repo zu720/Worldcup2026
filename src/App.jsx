@@ -11,6 +11,7 @@ import {
   subscribeTournament,
   logVisit,
   getVisitStats,
+  getSimLog,
   myName as myNameStore,
 } from "./lib/api";
 import { hasSupabase } from "./lib/supabase";
@@ -45,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v19";
+var APP_VERSION = "v20";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -1460,10 +1461,15 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         var remainMatches = Math.max(0, 16 - (dko.r32 || []).length) + Math.max(0, 8 - (dko.r16 || []).length) + Math.max(0, 4 - (dko.qf || []).length) + Math.max(0, 2 - (dko.sf || []).length) + (dko.champ ? 0 : 1) + (dko.third ? 0 : 1);
         var combos = Math.pow(2, remainMatches);
         var combosLabel = combos >= 1e8 ? (combos / 1e8).toFixed(1).replace(/\.0$/, "") + "億" : combos >= 1e4 ? Math.round(combos / 1e4) + "万" : String(combos);
+        // 操作ログ（誰が・誰を選んで・何をしたか）。visitsテーブルに path='sim|操作|対象' で記録。
+        var logSimAction = function (action, target) {
+          try { logVisit({ name: (myName_ || "").trim() || null, path: "sim|" + action + "|" + (target || "-"), ua: navigator.userAgent }); } catch (e) { /* ignore */ }
+        };
         var runSim = function (maximize) {
           var m = rows.find(function (x) { return x.name === simName; }); if (!m) return;
           var ko = optimizeBracket(m, liveR32.leftRes, liveR32.rightRes, groupsForScore, maximize, (tour && tour.ko) || {});
           if (ko && applySim) applySim(ko);
+          logSimAction(maximize ? "最高順位" : "最低順位", simName);
         };
         var runProbs = function () {
           if (probBusy || !simReady) return;
@@ -1476,6 +1482,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
               var p = computeRankViews(mem, teams, (tour && tour.ko) || {}, groupsForScore, 2000);
               setProbs(p);
               setSortMode("sim"); // 計算したらシミュ順に並べ替え
+              logSimAction("順位予測", "-");
             } catch (e) { /* ignore */ }
             setProbBusy(false);
           }, 30);
@@ -1488,6 +1495,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
           if (teams.length !== 32) return;
           var br = simBracketOnce(teams, (tour && tour.ko) || {}, Math.random, false);
           if (applySim) applySim(br);
+          logSimAction("ランダム1回", "-");
         };
         return (
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(168,85,247,.08)", border: "1px solid " + $.purple + "44" }}>
@@ -2355,6 +2363,9 @@ function AdminPanel({ tour, setTour, close }) {
             {/* Visit stats */}
             <AdminVisitStats />
 
+            {/* 決勝T試算の操作ログ */}
+            <AdminSimLog />
+
             {/* Member predictions management */}
             <AdminMembers />
           </div>
@@ -2436,6 +2447,52 @@ function AdminVisitStats() {
 // ═══════════════════════════════════════════════════════════
 // Admin: Members (edit/delete other people's predictions)
 // ═══════════════════════════════════════════════════════════
+// 決勝T試算(シミュ)の操作ログ表示。誰が・いつ・何を・誰を選んだか。
+function AdminSimLog() {
+  var [log, setLog] = useState(null);
+  var [loading, setLoading] = useState(true);
+  var [err, setErr] = useState("");
+  function reload() { setLoading(true); getSimLog(80).then(function (d) { setLog(d || []); setLoading(false); setErr(""); }).catch(function (e) { setErr(e.message || String(e)); setLoading(false); }); }
+  useEffect(function () { reload(); }, []);
+  // path = 'sim|<操作>|<対象>'
+  function parse(p) { var a = (p || "").split("|"); return { action: a[1] || "?", target: a[2] && a[2] !== "-" ? a[2] : "" }; }
+  var actColor = function (act) { return act === "最高順位" ? $.pitchL : act === "最低順位" ? $.redL : act === "ランダム1回" ? $.purpleL : $.blueL; };
+  // 集計: 操作別回数
+  var counts = {};
+  (log || []).forEach(function (r) { var a = parse(r.path).action; counts[a] = (counts[a] || 0) + 1; });
+  return (
+    <div style={{ marginTop: 18, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
+      <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>🎲 シミュ操作ログ（誰が・誰を選んで・何をしたか）</span>
+        <button onClick={reload} style={{ background: "transparent", border: "1px solid " + $.border, color: $.txt2, fontSize: 11, padding: "3px 10px", borderRadius: 5, cursor: "pointer" }}>↻ 再読込</button>
+      </div>
+      {loading && <div style={{ fontSize: 11, color: $.dim }}>読込中...</div>}
+      {err && <div style={{ fontSize: 11, color: $.redL }}>エラー: {err}</div>}
+      {log && (
+        <div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8, fontSize: 10 }}>
+            <span style={{ color: $.dim }}>直近{log.length}件：</span>
+            {Object.keys(counts).map(function (a) { return <span key={a} style={{ color: actColor(a), fontWeight: 700 }}>{a} {counts[a]}回</span>; })}
+            {log.length === 0 && <span style={{ color: $.dim }}>まだ操作ログがありません</span>}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 260, overflowY: "auto" }}>
+            {log.map(function (r, i) {
+              var p = parse(r.path);
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, padding: "4px 8px", borderRadius: 5, background: "rgba(0,0,0,.2)" }}>
+                  <span style={{ color: $.dim, fontSize: 9, minWidth: 96, flexShrink: 0 }}>{r.created_at ? new Date(r.created_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                  <span style={{ fontWeight: 700, minWidth: 70, flexShrink: 0 }}>{r.name || "（無名）"}</span>
+                  <span style={{ color: actColor(p.action), fontWeight: 700 }}>{p.action}</span>
+                  {p.target && <span style={{ color: $.txt2 }}>→ {p.target}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 function AdminMembers() {
   var [list, setList] = useState([]);
   var [loading, setLoading] = useState(true);

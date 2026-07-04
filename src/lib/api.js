@@ -176,6 +176,16 @@ export async function getVisitStats() {
   };
 }
 
+// 決勝T試算(シミュ)の操作ログ。visits を流用し path 'sim|<操作>|<対象>' で記録したものを取得。
+export async function getSimLog(limit = 60) {
+  if (hasSupabase) {
+    const { data } = await supabase.from('visits').select('name,path,created_at').like('path', 'sim|%').order('created_at', { ascending: false }).limit(limit);
+    return data || [];
+  }
+  const arr = lsLoad(LS_VISIT_KEY, []).filter((v) => (v.path || '').startsWith('sim|'));
+  return arr.slice(-limit).reverse();
+}
+
 /* ── realtime subscriptions (supabase only) ── */
 
 // チャンネル名は購読ごとに一意にする（同名チャンネルへの二重subscribeはSupabaseがエラーを投げるため）
