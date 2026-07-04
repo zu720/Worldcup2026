@@ -45,7 +45,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v16";
+var APP_VERSION = "v17";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -180,7 +180,7 @@ var OFFICIAL_KO_RESULTS = [
   { round: 4, home: "オランダ", away: "モロッコ", hs: 1, as: 1, win: "モロッコ", pkh: 2, pka: 3, date: "2026-06-29" },
   { round: 4, home: "コートジボワール", away: "ノルウェー", hs: 1, as: 2, date: "2026-06-30" },
   { round: 4, home: "スウェーデン", away: "フランス", hs: 0, as: 3, date: "2026-06-30" },
-  { round: 4, home: "メキシコ", away: "エクアドル", hs: 2, as: 0, date: "2026-06-30" },
+  { round: 4, home: "オーストラリア", away: "エジプト", hs: 1, as: 1, win: "エジプト", date: "2026-06-30" }, // ※延長込みスコア/PK本数は要確認（仮1-1）
 ];
 // ロック対象（ステージ→確定済みチーム集合）。OFFICIAL_KO_RESULTSから生成。
 var KO_LOCKED = (function () { var o = {}; OFFICIAL_KO_RESULTS.forEach(function (r) { var st = KO_RS[r.round]; if (!st) return; (o[st] = o[st] || {})[r.home] = 1; o[st][r.away] = 1; }); return o; })();
