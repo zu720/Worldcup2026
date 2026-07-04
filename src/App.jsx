@@ -45,7 +45,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v17";
+var APP_VERSION = "v18";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -1480,10 +1480,19 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
             setProbBusy(false);
           }, 30);
         };
+        // ランダムに1回だけシミュレーションし、その勝ち上がりを決勝T表＋全員のスコアに反映
+        var runOneSim = function () {
+          if (!simReady) return;
+          var teams = [];
+          (liveR32.leftRes || []).concat(liveR32.rightRes || []).forEach(function (mm) { (mm.teams || []).forEach(function (t) { teams.push({ n: t.n, o: t.o }); }); });
+          if (teams.length !== 32) return;
+          var br = simBracketOnce(teams, (tour && tour.ko) || {}, Math.random, false);
+          if (applySim) applySim(br);
+        };
         return (
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(168,85,247,.08)", border: "1px solid " + $.purple + "44" }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: $.purpleL, marginBottom: 2 }}>🔮 決勝トーナメント試算</div>
-            <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>参加者を選ぶと、その人が<b>最高順位</b>／<b>最低順位</b>になる勝ち上がりを決勝T表と全員のスコアに反映します（この端末だけの試算）。確定済みの試合は固定。</div>
+            <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>参加者を選ぶと、その人が<b>最高順位</b>／<b>最低順位</b>になる勝ち上がりを決勝T表と全員のスコアに反映（この端末だけの試算）。<b>🎲ランダム1回</b>は勝率で1回だけ勝ち上がりを引き、決勝T表とポイントに反映します。確定済みの試合は固定・🔄で戻す。</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <select value={simName} onChange={function (e) { setSimName(e.target.value); }}
                 style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.purple + "66", fontSize: 13, fontWeight: 700, minWidth: 160 }}>
@@ -1494,6 +1503,8 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simName && simReady) ? "pointer" : "default", opacity: (simName && simReady) ? 1 : .45, border: "1px solid " + $.pitchL + "80", background: "rgba(34,197,94,.12)", color: $.pitchL }}>🔼 最高順位になる結果</button>
               <button disabled={!simName || !simReady} onClick={function () { runSim(false); }}
                 style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: (simName && simReady) ? "pointer" : "default", opacity: (simName && simReady) ? 1 : .45, border: "1px solid " + $.red + "80", background: "rgba(248,113,113,.12)", color: $.redL }}>🔽 最低順位になる結果</button>
+              <button disabled={!simReady} onClick={runOneSim}
+                style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: simReady ? "pointer" : "default", opacity: simReady ? 1 : .45, border: "1px solid " + $.purple + "88", background: "rgba(168,85,247,.16)", color: $.purpleL }}>🎲 ランダム1回（表に反映）</button>
               {simActive && <button onClick={resetSim || function () {}}
                 style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 8, cursor: "pointer", border: "1px solid " + $.gold + "70", background: "rgba(251,191,36,.10)", color: $.goldL }}>🔄 リセット</button>}
             </div>
