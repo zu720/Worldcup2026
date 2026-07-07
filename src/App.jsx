@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v20";
+var APP_VERSION = "v21";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -181,7 +181,19 @@ var OFFICIAL_KO_RESULTS = [
   { round: 4, home: "オランダ", away: "モロッコ", hs: 1, as: 1, win: "モロッコ", pkh: 2, pka: 3, date: "2026-06-29" },
   { round: 4, home: "コートジボワール", away: "ノルウェー", hs: 1, as: 2, date: "2026-06-30" },
   { round: 4, home: "スウェーデン", away: "フランス", hs: 0, as: 3, date: "2026-06-30" },
+  { round: 4, home: "メキシコ", away: "エクアドル", hs: 2, as: 0, date: "2026-06-30" },
   { round: 4, home: "オーストラリア", away: "エジプト", hs: 1, as: 1, win: "エジプト", pkh: 2, pka: 4, date: "2026-06-30" }, // 1-1(仮), PK 4-2 エジプト
+  // R32 残り8試合（出典: Wikipedia/ESPN/FIFA, 7/1〜7/2）
+  { round: 4, home: "イングランド", away: "DRコンゴ", hs: 2, as: 1, date: "2026-07-01" },
+  { round: 4, home: "アメリカ", away: "ボスニア", hs: 2, as: 0, date: "2026-07-01" },
+  { round: 4, home: "ベルギー", away: "セネガル", hs: 3, as: 2, date: "2026-07-01" }, // 延長(90分1-1)
+  { round: 4, home: "ポルトガル", away: "クロアチア", hs: 2, as: 1, date: "2026-07-02" },
+  { round: 4, home: "スペイン", away: "オーストリア", hs: 3, as: 0, date: "2026-07-02" },
+  { round: 4, home: "スイス", away: "アルジェリア", hs: 2, as: 0, date: "2026-07-02" },
+  { round: 4, home: "アルゼンチン", away: "カーボベルデ", hs: 3, as: 2, date: "2026-07-02" }, // 延長(90分1-1)
+  { round: 4, home: "コロンビア", away: "ガーナ", hs: 1, as: 0, date: "2026-07-02" },
+  // R16
+  { round: 5, home: "スイス", away: "コロンビア", hs: 0, as: 0, win: "スイス", pkh: 4, pka: 3, date: "2026-07-07" }, // 0-0, PK 4-3 スイス
 ];
 // ロック対象（ステージ→確定済みチーム集合）。OFFICIAL_KO_RESULTSから生成。
 var KO_LOCKED = (function () { var o = {}; OFFICIAL_KO_RESULTS.forEach(function (r) { var st = KO_RS[r.round]; if (!st) return; (o[st] = o[st] || {})[r.home] = 1; o[st][r.away] = 1; }); return o; })();
@@ -626,8 +638,9 @@ function overlayOfficial(tour) {
       if (st === "final") { add("sf", r.home); add("sf", r.away); add("final", r.home); add("final", r.away); if (!newKo.champ) newKo.champ = w; }
       else add(st, w);
     });
-    var hasOfficialKO = OFFICIAL_KO_RESULTS.length > 0;
-    var phase = t.phase && t.phase !== "pre" ? t.phase : (hasOfficialKO ? "r32" : "groups");
+    // 確定済み決勝Tの最も深いラウンドでフェーズを決める（R16に進んだら"r16"等）。
+    var maxR = 0; OFFICIAL_KO_RESULTS.forEach(function (r) { if (r.round > maxR) maxR = r.round; });
+    var phase = maxR ? (KO_RS[maxR] || "r32") : (t.phase && t.phase !== "pre" ? t.phase : "groups");
     return Object.assign({}, t, { groups: groups, ko: newKo, phase: phase });
   } catch (e) { return tour; }
 }
