@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v21";
+var APP_VERSION = "v22";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -210,12 +210,25 @@ function buildKoScores(ko) {
   return map;
 }
 // 指定ステージ・2チームのスコアを取得（aの得点/bの得点）。無ければnull。PK情報も返す。
+// PKは片側だけ入力途中でも保持（どちらか入っていれば返す）。
 function koGoals(scores, stage, a, b) {
   if (!scores || !a || !b) return null;
   var s = scores[stage + ":" + [a, b].slice().sort().join("|")]; if (!s) return null;
   var aHome = s.home === a;
-  var pk = (s.pkh != null && s.pka != null) ? { a: aHome ? s.pkh : s.pka, b: aHome ? s.pka : s.pkh } : null;
+  var pk = (s.pkh != null || s.pka != null) ? { a: aHome ? s.pkh : s.pka, b: aHome ? s.pka : s.pkh } : null;
   return { a: aHome ? s.hs : s.as, b: aHome ? s.as : s.hs, official: s.official, win: s.win || null, pk: pk };
+}
+// 勝者wを次ラウンドへ、敗者lを以降のラウンドから外す（本戦/PK共通の勝ち上がり処理）。
+function koApplyWinner(n, stage, m, w, l) {
+  var order = ["r32", "r16", "qf", "sf", "final"];
+  if (stage === "final") {
+    ["sf", "final"].forEach(function (k) { [m.home, m.away].forEach(function (t) { if (n[k].indexOf(t) < 0) n[k].push(t); }); });
+    n.champ = w;
+  } else {
+    if (n[stage].indexOf(w) < 0) n[stage].push(w);
+    order.slice(order.indexOf(stage)).forEach(function (s) { n[s] = n[s].filter(function (t) { return t !== l; }); });
+    if (n.champ === l) n.champ = null; if (n.third === l) n.third = null;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2024,7 +2037,7 @@ function CardEditor({ tour, setTour }) {
 }
 // 管理画面の決勝T入力用ブラケット。ランキング画面のブラケット(BView)を流用し、
 // クリック(adv)で勝者を勝ち上がらせる。R32の対戦は確定グループ順位から常に算出（provisional）。
-function AdminKoBracket({ tour, ko, adv, setScore }) {
+function AdminKoBracket({ tour, ko, adv, setScore, setPk }) {
   var groups = (tour && tour.groups) || {};
   var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
   var liveTp = useMemo(function () { return deriveTpProvisional(groups); }, [groups]);
@@ -2053,7 +2066,7 @@ function AdminKoBracket({ tour, ko, adv, setScore }) {
       {/* スコア入力（両者決まったカードのみ。両方入れると勝者が自動で勝ち上がり） */}
       <div style={{ marginTop: 12, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
         <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 2 }}>✏️ 決勝T スコア入力</div>
-        <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>両チームのスコアを入れると勝者が自動で次へ進みます（PK等の引き分けは上のブラケットで勝者をクリック）。🔒＝確定済みで変更不可。</div>
+        <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>両チームのスコアを入れると勝者が自動で次へ進みます。<b>引き分けにすると右に「PK」欄</b>が出るので、PK本数を入れると多い方が勝ち上がり（→勝者を表示）。🔒＝確定済みで変更不可。</div>
         {rounds.map(function (rd) {
           var pairs = (rd.pairs || []).filter(function (p) { return p[0] && p[0].n && p[1] && p[1].n; });
           if (!pairs.length) return null;
@@ -2061,7 +2074,7 @@ function AdminKoBracket({ tour, ko, adv, setScore }) {
             <div key={rd.stage} style={{ marginBottom: 8 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: $.dim, marginBottom: 3 }}>{rd.label}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {pairs.map(function (p, i) { return <KoScoreRow key={rd.stage + i} stage={rd.stage} a={p[0].n} b={p[1].n} scores={koScores} setScore={setScore} />; })}
+                {pairs.map(function (p, i) { return <KoScoreRow key={rd.stage + i} stage={rd.stage} a={p[0].n} b={p[1].n} scores={koScores} setScore={setScore} setPk={setPk} />; })}
               </div>
             </div>
           );
@@ -2071,17 +2084,28 @@ function AdminKoBracket({ tour, ko, adv, setScore }) {
   );
 }
 // 1カードのスコア入力行。a/b はチーム名。確定済み(公式)は読み取り専用＋🔒。
-function KoScoreRow({ stage, a, b, scores, setScore }) {
+function KoScoreRow({ stage, a, b, scores, setScore, setPk }) {
   var sc = koGoals(scores, stage, a, b);
   var locked = !!(sc && sc.official) || koLocked(stage, a) || koLocked(stage, b);
+  var isDraw = sc && sc.a != null && sc.b != null && sc.a === sc.b; // 本戦引き分け→PK
   var inp = { width: 34, padding: "3px 2px", borderRadius: 5, background: locked ? "rgba(255,255,255,.04)" : "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, textAlign: "center" };
+  var pkInp = Object.assign({}, inp, { width: 30, fontSize: 12, borderColor: $.gold + "66" });
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, flexWrap: "wrap" }}>
       <span style={{ flex: 1, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 3 }}><Fl n={a} s={13} />{a}</span>
       <input type="number" min="0" disabled={locked} value={sc && sc.a != null ? sc.a : ""} onChange={function (e) { setScore(stage, a, b, e.target.value); }} style={inp} />
       <span style={{ color: $.dim }}>-</span>
       <input type="number" min="0" disabled={locked} value={sc && sc.b != null ? sc.b : ""} onChange={function (e) { setScore(stage, b, a, e.target.value); }} style={inp} />
-      <span style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", display: "inline-flex", alignItems: "center", gap: 3 }}>{b}<Fl n={b} s={13} />{sc && sc.pk && <span title="PK戦" style={{ fontSize: 9, color: $.goldL, marginLeft: 2 }}>PK {sc.pk.a}-{sc.pk.b}</span>}{locked && <span title="確定済み" style={{ marginLeft: 2 }}>🔒</span>}</span>
+      <span style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", display: "inline-flex", alignItems: "center", gap: 3 }}>{b}<Fl n={b} s={13} />{locked && <span title="確定済み" style={{ marginLeft: 2 }}>🔒</span>}</span>
+      {(isDraw || (sc && sc.pk)) && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, color: $.goldL, marginLeft: 2 }}>
+          PK
+          <input type="number" min="0" disabled={locked} value={sc && sc.pk && sc.pk.a != null ? sc.pk.a : ""} onChange={function (e) { setPk(stage, a, b, e.target.value); }} style={pkInp} />
+          <span style={{ color: $.dim }}>-</span>
+          <input type="number" min="0" disabled={locked} value={sc && sc.pk && sc.pk.b != null ? sc.pk.b : ""} onChange={function (e) { setPk(stage, b, a, e.target.value); }} style={pkInp} />
+          {sc && sc.win && <span style={{ color: $.pitchL, fontWeight: 700, marginLeft: 2 }}>→{sc.win}</span>}
+        </span>
+      )}
     </div>
   );
 }
@@ -2146,18 +2170,35 @@ function AdminPanel({ tour, setTour, close }) {
         m.status = (m.hs != null && m.as != null) ? "FT" : "";
         if (idx >= 0) matches[idx] = m; else matches.push(m);
         var n = { r32: (prev.r32 || []).slice(), r16: (prev.r16 || []).slice(), qf: (prev.qf || []).slice(), sf: (prev.sf || []).slice(), final: (prev.final || []).slice(), champ: prev.champ, third: prev.third, matches: matches, teamCards: prev.teamCards };
-        // 両者入力済み＆勝敗が付いていれば勝者を勝ち上がらせ、敗者を以降から外す
+        // 本戦で勝敗が付けば勝者を勝ち上がらせる。引き分けはPK入力(setKoPk)で決着。
         if (m.hs != null && m.as != null && m.hs !== m.as) {
-          var w = m.hs > m.as ? m.home : m.away, l = m.hs > m.as ? m.away : m.home;
-          var order = ["r32", "r16", "qf", "sf", "final"];
-          if (stage === "final") {
-            ["sf", "final"].forEach(function (k) { [m.home, m.away].forEach(function (t) { if (n[k].indexOf(t) < 0) n[k].push(t); }); });
-            n.champ = w;
-          } else {
-            if (n[stage].indexOf(w) < 0) n[stage].push(w);
-            order.slice(order.indexOf(stage)).forEach(function (s) { n[s] = n[s].filter(function (t) { return t !== l; }); });
-            if (n.champ === l) n.champ = null; if (n.third === l) n.third = null;
-          }
+          m.win = m.hs > m.as ? m.home : m.away;
+          koApplyWinner(n, stage, m, m.win, m.win === m.home ? m.away : m.home);
+        }
+        return n;
+      } catch (e) { return prev; }
+    });
+  }
+  // 引き分けのPK結果を入力。PKの多い方を勝者として勝ち上がらせる。
+  function setKoPk(stage, team, opp, valStr) {
+    if (koLocked(stage, team) || koLocked(stage, opp)) { setMsg("🔒 確定済みの結果は変更できません"); setTimeout(function () { setMsg(""); }, 1800); return; }
+    var round = KO_SR[stage]; if (!round) return;
+    var val = valStr === "" || valStr == null ? null : Math.max(0, parseInt(valStr, 10) || 0);
+    setKoTouched(true);
+    setKoL(function (prev) {
+      try {
+        var matches = ((prev.matches) || []).slice();
+        var idx = matches.findIndex(function (m) { return m && m.round === round && ((m.home === team && m.away === opp) || (m.home === opp && m.away === team)); });
+        if (idx < 0) return prev; // 先に本戦スコア（引き分け）を入れてから
+        var m = Object.assign({}, matches[idx]);
+        if (m.official) return prev;
+        if (m.home === team) m.pkh = val; else m.pka = val;
+        matches[idx] = m;
+        var n = { r32: (prev.r32 || []).slice(), r16: (prev.r16 || []).slice(), qf: (prev.qf || []).slice(), sf: (prev.sf || []).slice(), final: (prev.final || []).slice(), champ: prev.champ, third: prev.third, matches: matches, teamCards: prev.teamCards };
+        // 本戦引き分け＆両PK入力＆差があれば、PK勝者を勝ち上がらせる
+        if (m.hs != null && m.as != null && m.hs === m.as && m.pkh != null && m.pka != null && m.pkh !== m.pka) {
+          m.win = m.pkh > m.pka ? m.home : m.away;
+          koApplyWinner(n, stage, m, m.win, m.win === m.home ? m.away : m.home);
         }
         return n;
       } catch (e) { return prev; }
@@ -2365,7 +2406,7 @@ function AdminPanel({ tour, setTour, close }) {
             <div style={{ fontSize: 10, color: $.dim, marginBottom: 6 }}>
               各カードの<strong>勝った国名をクリック</strong>すると次のラウンドへ進みます（もう一度押すと取消）。R32→R16→準々→準決→決勝の順に。決勝枠で👑優勝、🥉THIRD PLACEで3位を選択。最後に下の<strong>💾 実結果を保存</strong>。
             </div>
-            <AdminKoBracket tour={tour} ko={ko} adv={koAdv} setScore={setKoScore} />
+            <AdminKoBracket tour={tour} ko={ko} adv={koAdv} setScore={setKoScore} setPk={setKoPk} />
 
             {/* Save bar */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid " + $.border }}>
