@@ -46,7 +46,9 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v22";
+var APP_VERSION = "v23";
+// 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
+var PHASE_OVERRIDE = "qf";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -652,8 +654,9 @@ function overlayOfficial(tour) {
       else add(st, w);
     });
     // 確定済み決勝Tの最も深いラウンドでフェーズを決める（R16に進んだら"r16"等）。
+    // PHASE_OVERRIDE を設定するとそちらを優先（大会進行に合わせて手動で上げる）。
     var maxR = 0; OFFICIAL_KO_RESULTS.forEach(function (r) { if (r.round > maxR) maxR = r.round; });
-    var phase = maxR ? (KO_RS[maxR] || "r32") : (t.phase && t.phase !== "pre" ? t.phase : "groups");
+    var phase = PHASE_OVERRIDE || (maxR ? (KO_RS[maxR] || "r32") : (t.phase && t.phase !== "pre" ? t.phase : "groups"));
     return Object.assign({}, t, { groups: groups, ko: newKo, phase: phase });
   } catch (e) { return tour; }
 }
