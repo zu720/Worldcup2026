@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v24";
+var APP_VERSION = "v25";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -1536,31 +1536,49 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
     <div className="fade-in">
       <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）") + "　/　得点の左「◯-◯位」＝まだ可能性のある最終順位"} />
 
-      {/* 残り4チーム（準決勝）専用シミュ */}
+      {/* 残り4チーム（準決勝）専用インタラクティブ・シミュ */}
       {fourSim && (function () {
         var conts = Object.keys(fourSim.byMember).map(function (n) { return { name: n, f: fourSim.byMember[n].firsts, best: fourSim.byMember[n].best, worst: fourSim.byMember[n].worst }; }).filter(function (x) { return x.f > 0; }).sort(function (a, b) { return b.f - a.f || a.best - b.best; });
+        // 現在のシナリオ（simKoから読む）
+        var koc = simKo || {};
+        var curSf = koc.sf || [];
+        var sfL = fourSim.leftS.filter(function (n) { return curSf.indexOf(n) >= 0; })[0] || null;
+        var sfR = fourSim.rightS.filter(function (n) { return curSf.indexOf(n) >= 0; })[0] || null;
+        var leftLoser = sfL ? fourSim.leftS.filter(function (n) { return n !== sfL; })[0] : null;
+        var rightLoser = sfR ? fourSim.rightS.filter(function (n) { return n !== sfR; })[0] : null;
+        var champ = koc.champ || null, third = koc.third || null;
+        var apply = function (nSf, nChamp, nThird) {
+          var base = koCopy((tour && tour.ko) || {});
+          base.sf = nSf.filter(Boolean);
+          base.champ = (nChamp && base.sf.indexOf(nChamp) >= 0) ? nChamp : null;
+          var losers = fourSim.semis.filter(function (n) { return base.sf.indexOf(n) < 0; });
+          base.third = (nThird && losers.indexOf(nThird) >= 0) ? nThird : null;
+          if (applySim) applySim(base);
+        };
+        var chip = function (name, on, accent, mark, onClick) {
+          return <button key={name} onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (on ? accent : $.border), background: on ? accent + "22" : "rgba(0,0,0,.25)", color: on ? accent : $.txt2, flex: 1, justifyContent: "center", minWidth: 92 }}><Fl n={name} s={13} />{name}{on && mark ? " " + mark : ""}</button>;
+        };
+        var matchRow = function (label, opts) {
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+              <span style={{ fontSize: 9, color: $.dim, fontWeight: 700, width: 62, flexShrink: 0 }}>{label}</span>
+              <div style={{ display: "flex", gap: 5, flex: 1 }}>{opts}</div>
+            </div>
+          );
+        };
         return (
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(245,197,24,.07)", border: "1px solid " + $.gold + "55" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: $.gold, marginBottom: 4 }}>🏆 残り4チームで順位はこう決まる <span style={{ fontSize: 10, color: $.dim, fontWeight: 400 }}>（全{fourSim.total}通り）</span></div>
-            <div style={{ fontSize: 11, color: $.txt2, marginBottom: 8, display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
-              <span>準決勝：</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><Fl n={fourSim.leftS[0]} s={13} />{fourSim.leftS[0]} <span style={{ color: $.dim }}>vs</span> <Fl n={fourSim.leftS[1]} s={13} />{fourSim.leftS[1]}</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><Fl n={fourSim.rightS[0]} s={13} />{fourSim.rightS[0]} <span style={{ color: $.dim }}>vs</span> <Fl n={fourSim.rightS[1]} s={13} />{fourSim.rightS[1]}</span>
+            <div style={{ fontSize: 13, fontWeight: 800, color: $.gold, marginBottom: 2 }}>🏆 残り4チーム シミュレーション</div>
+            <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>勝った国をクリックすると準決勝→決勝→3位決定戦が進み、<b>下のランキング全体がその結果で並び替わります</b>（この端末だけの試算）。</div>
+            {matchRow("準決勝1", fourSim.leftS.map(function (n) { return chip(n, sfL === n, $.pitchL, "✓", function () { apply([n, sfR], champ, third); }); }))}
+            {matchRow("準決勝2", fourSim.rightS.map(function (n) { return chip(n, sfR === n, $.pitchL, "✓", function () { apply([sfL, n], champ, third); }); }))}
+            {(sfL && sfR) ? matchRow("🏆 決勝", [sfL, sfR].map(function (n) { return chip(n, champ === n, $.gold, "👑", function () { apply([sfL, sfR], n, third); }); })) : <div style={{ fontSize: 10, color: $.dim, marginBottom: 5, paddingLeft: 68 }}>決勝：準決勝の勝者を選ぶと表示</div>}
+            {(sfL && sfR) ? matchRow("🥉 3位決定戦", [leftLoser, rightLoser].map(function (n) { return chip(n, third === n, "#e8a13a", "🥉", function () { apply([sfL, sfR], champ, n); }); })) : null}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 8, flexWrap: "wrap" }}>
+              <button onClick={resetSim || function () {}} disabled={!simActive} style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: simActive ? "pointer" : "default", opacity: simActive ? 1 : .45, border: "1px solid " + $.gold + "70", background: "rgba(251,191,36,.10)", color: $.goldL }}>🔄 リセット</button>
+              {simActive && <span style={{ fontSize: 10, color: $.purpleL, fontWeight: 700 }}>🔮 このシナリオでランキング反映中</span>}
             </div>
-            <div style={{ fontSize: 10, color: $.dim, fontWeight: 700, marginBottom: 3 }}>👑 優勝チーム別・首位になる人</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 5, marginBottom: 10 }}>
-              {fourSim.semis.map(function (team) {
-                var lead = fourSim.byChamp[team] || {};
-                return (
-                  <div key={team} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, padding: "5px 8px", borderRadius: 6, background: "rgba(0,0,0,.2)" }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontWeight: 700, minWidth: 74 }}><Fl n={team} s={13} />{team}</span>
-                    <span style={{ color: $.dim }}>→</span>
-                    <span style={{ color: $.goldL, fontWeight: 700 }}>🥇 {lead.leader || "—"}{lead.varies ? "…" : ""}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 10, color: $.dim, fontWeight: 700, marginBottom: 3 }}>まだ1位の可能性がある人（{conts.length}名）</div>
+            <div style={{ fontSize: 10, color: $.dim, fontWeight: 700, marginBottom: 3 }}>まだ1位の可能性がある人（全{fourSim.total}通り中 / {conts.length}名）</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
               {conts.map(function (c) {
                 var isMe = c.name === myName_;
@@ -1573,7 +1591,6 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 );
               })}
             </div>
-            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>準決勝・決勝・3位決定戦の全パターンで各自の得点・順位を計算。「…」は優勝相手/3位次第で首位が変わることを表す。</div>
           </div>
         );
       })()}
