@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v28";
+var APP_VERSION = "v29";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -208,6 +208,8 @@ var OFFICIAL_KO_RESULTS = [
   { round: 6, home: "イングランド", away: "ノルウェー", hs: 2, as: 1, date: "2026-07-10" },
   { round: 6, home: "スペイン", away: "ベルギー", hs: 2, as: 1, date: "2026-07-11" },
   { round: 6, home: "アルゼンチン", away: "スイス", hs: 3, as: 1, date: "2026-07-11" },
+  // SF（準決勝, 7/14〜）
+  { round: 7, home: "フランス", away: "スペイン", hs: 0, as: 2, date: "2026-07-14" },
 ];
 // ロック対象（ステージ→確定済みチーム集合）。OFFICIAL_KO_RESULTSから生成。
 var KO_LOCKED = (function () { var o = {}; OFFICIAL_KO_RESULTS.forEach(function (r) { var st = KO_RS[r.round]; if (!st) return; (o[st] = o[st] || {})[r.home] = 1; o[st][r.away] = 1; }); return o; })();
@@ -640,24 +642,33 @@ function computeRankViews(members, teams, dec, groups, N) {
 function computeFourTeamScenarios(members, dec, groups, leftRes, rightRes) {
   try {
     var semis = (dec.qf || []).slice();
-    if (semis.length !== 4 || (dec.sf && dec.sf.length)) return null; // SF未消化のときだけ
+    if (semis.length !== 4) return null;
+    if (dec.champ && dec.third) return null; // 全て確定済みなら試算不要
     var leftN = {}, rightN = {};
     (leftRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { if (t && t.n) leftN[t.n] = 1; }); });
     (rightRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { if (t && t.n) rightN[t.n] = 1; }); });
     var leftS = semis.filter(function (n) { return leftN[n]; });
     var rightS = semis.filter(function (n) { return rightN[n]; });
     if (leftS.length !== 2 || rightS.length !== 2) return null;
+    // 既に消化済みのSF勝者（決勝進出）は固定し、未消化ぶんだけ列挙する。
+    var decFinal = (dec.sf || []).slice();
+    var leftDec = leftS.filter(function (n) { return decFinal.indexOf(n) >= 0; })[0] || null;
+    var rightDec = rightS.filter(function (n) { return decFinal.indexOf(n) >= 0; })[0] || null;
+    var leftOpts = leftDec ? [leftS.indexOf(leftDec)] : [0, 1];
+    var rightOpts = rightDec ? [rightS.indexOf(rightDec)] : [0, 1];
     var part = []; Object.keys(GRP).forEach(function (g) { var a = groups[g] || []; if (a.some(function (t) { return (t.mp || 0) > 0; })) a.slice(0, 2).forEach(function (t) { if (t && t.n) part.push(t.n); }); });
     var pre = members.map(function (m) { return { name: m.name, picks: precompMember(m, groups) }; });
     var M = members.length;
     var byMember = {}; members.forEach(function (m) { byMember[m.name] = { best: M, worst: 1, firsts: 0 }; });
     var champLead = {}; semis.forEach(function (n) { champLead[n] = {}; });
     var total = 0;
-    [0, 1].forEach(function (a) { var sf1w = leftS[a], sf1l = leftS[1 - a];
-      [0, 1].forEach(function (b) { var sf2w = rightS[b], sf2l = rightS[1 - b];
+    leftOpts.forEach(function (a) { var sf1w = leftS[a], sf1l = leftS[1 - a];
+      rightOpts.forEach(function (b) { var sf2w = rightS[b], sf2l = rightS[1 - b];
         var finalists = [sf1w, sf2w];
-        [sf1w, sf2w].forEach(function (champ) {
-          [sf1l, sf2l].forEach(function (third) {
+        var champOpts = (dec.champ && finalists.indexOf(dec.champ) >= 0) ? [dec.champ] : finalists;
+        var thirdOpts = (dec.third && [sf1l, sf2l].indexOf(dec.third) >= 0) ? [dec.third] : [sf1l, sf2l];
+        champOpts.forEach(function (champ) {
+          thirdOpts.forEach(function (third) {
             total++;
             var br = { r32: dec.r32 || [], r16: dec.r16 || [], qf: dec.qf || [], sf: finalists, final: finalists, champ: champ, third: third };
             var sk = { r32: part, r16: br.r32, qf: br.r16, sf: br.qf, final: br.sf, champ: br.champ, third: br.third };
@@ -671,7 +682,7 @@ function computeFourTeamScenarios(members, dec, groups, leftRes, rightRes) {
     });
     var byChamp = {};
     semis.forEach(function (n) { var d = champLead[n], best = null, bc = 0; Object.keys(d).forEach(function (k) { if (d[k] > bc) { bc = d[k]; best = k; } }); byChamp[n] = { leader: best, varies: Object.keys(d).length > 1 }; });
-    return { semis: semis, leftS: leftS, rightS: rightS, total: total, byMember: byMember, byChamp: byChamp };
+    return { semis: semis, leftS: leftS, rightS: rightS, leftDec: leftDec, rightDec: rightDec, total: total, byMember: byMember, byChamp: byChamp };
   } catch (e) { return null; }
 }
 
@@ -1555,13 +1566,14 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
           base.third = (nThird && losers.indexOf(nThird) >= 0) ? nThird : null;
           if (applySim) applySim(base);
         };
-        var chip = function (name, on, accent, mark, onClick) {
-          return <button key={name} onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 7, cursor: "pointer", border: "1px solid " + (on ? accent : $.border), background: on ? accent + "22" : "rgba(0,0,0,.25)", color: on ? accent : $.txt2, flex: 1, justifyContent: "center", minWidth: 92 }}><Fl n={name} s={13} />{name}{on && mark ? " " + mark : ""}</button>;
+        var chip = function (name, on, accent, mark, onClick, locked) {
+          var dimmed = locked && !on;
+          return <button key={name} onClick={locked ? undefined : onClick} disabled={!!locked} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 7, cursor: locked ? "default" : "pointer", border: "1px solid " + (on ? accent : $.border), background: on ? accent + "22" : "rgba(0,0,0,.25)", color: on ? accent : (dimmed ? $.dim : $.txt2), opacity: dimmed ? .5 : 1, textDecoration: dimmed ? "line-through" : "none", flex: 1, justifyContent: "center", minWidth: 92 }}><Fl n={name} s={13} />{name}{on && mark ? " " + mark : ""}{on && locked ? " 🔒" : ""}</button>;
         };
         var matchRow = function (label, opts) {
           return (
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
-              <span style={{ fontSize: 9, color: $.dim, fontWeight: 700, width: 62, flexShrink: 0 }}>{label}</span>
+              <span style={{ fontSize: 9, color: $.dim, fontWeight: 700, width: 74, flexShrink: 0 }}>{label}</span>
               <div style={{ display: "flex", gap: 5, flex: 1 }}>{opts}</div>
             </div>
           );
@@ -1569,10 +1581,10 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         return (
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(245,197,24,.07)", border: "1px solid " + $.gold + "55" }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: $.gold, marginBottom: 2 }}>🏆 残り4チーム シミュレーション</div>
-            <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>勝った国をクリックすると準決勝→決勝→3位決定戦が進み、<b>下のランキング全体がその結果で並び替わります</b>（この端末だけの試算）。</div>
-            {matchRow("準決勝1", fourSim.leftS.map(function (n) { return chip(n, sfL === n, $.pitchL, "✓", function () { apply([n, sfR], champ, third); }); }))}
-            {matchRow("準決勝2", fourSim.rightS.map(function (n) { return chip(n, sfR === n, $.pitchL, "✓", function () { apply([sfL, n], champ, third); }); }))}
-            {(sfL && sfR) ? matchRow("🏆 決勝", [sfL, sfR].map(function (n) { return chip(n, champ === n, $.gold, "👑", function () { apply([sfL, sfR], n, third); }); })) : <div style={{ fontSize: 10, color: $.dim, marginBottom: 5, paddingLeft: 68 }}>決勝：準決勝の勝者を選ぶと表示</div>}
+            <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>勝った国をクリックすると準決勝→決勝→3位決定戦が進み、<b>下のランキング全体がその結果で並び替わります</b>（この端末だけの試算）。<b>✓確定</b>の試合は結果が出ているため固定です。</div>
+            {matchRow(fourSim.leftDec ? "準決勝1 ✓確定" : "準決勝1", fourSim.leftS.map(function (n) { return chip(n, sfL === n, $.pitchL, "✓", function () { apply([n, sfR], champ, third); }, !!fourSim.leftDec); }))}
+            {matchRow(fourSim.rightDec ? "準決勝2 ✓確定" : "準決勝2", fourSim.rightS.map(function (n) { return chip(n, sfR === n, $.pitchL, "✓", function () { apply([sfL, n], champ, third); }, !!fourSim.rightDec); }))}
+            {(sfL && sfR) ? matchRow("🏆 決勝", [sfL, sfR].map(function (n) { return chip(n, champ === n, $.gold, "👑", function () { apply([sfL, sfR], n, third); }); })) : <div style={{ fontSize: 10, color: $.dim, marginBottom: 5, paddingLeft: 80 }}>決勝：準決勝2の勝者を選ぶと表示</div>}
             {(sfL && sfR) ? matchRow("🥉 3位決定戦", [leftLoser, rightLoser].map(function (n) { return chip(n, third === n, "#e8a13a", "🥉", function () { apply([sfL, sfR], champ, n); }); })) : null}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 8, flexWrap: "wrap" }}>
               <button onClick={resetSim || function () {}} disabled={!simActive} style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: simActive ? "pointer" : "default", opacity: simActive ? 1 : .45, border: "1px solid " + $.gold + "70", background: "rgba(251,191,36,.10)", color: $.goldL }}>🔄 リセット</button>
