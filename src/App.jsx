@@ -46,9 +46,9 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v23";
+var APP_VERSION = "v24";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
-var PHASE_OVERRIDE = "qf";
+var PHASE_OVERRIDE = "sf";
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -194,8 +194,20 @@ var OFFICIAL_KO_RESULTS = [
   { round: 4, home: "スイス", away: "アルジェリア", hs: 2, as: 0, date: "2026-07-02" },
   { round: 4, home: "アルゼンチン", away: "カーボベルデ", hs: 3, as: 2, date: "2026-07-02" }, // 延長(90分1-1)
   { round: 4, home: "コロンビア", away: "ガーナ", hs: 1, as: 0, date: "2026-07-02" },
-  // R16
+  // R16（出典: Wikipedia/ESPN/FIFA, 7/5〜7/7）
   { round: 5, home: "スイス", away: "コロンビア", hs: 0, as: 0, win: "スイス", pkh: 4, pka: 3, date: "2026-07-07" }, // 0-0, PK 4-3 スイス
+  { round: 5, home: "モロッコ", away: "カナダ", hs: 3, as: 0, date: "2026-07-06" },
+  { round: 5, home: "フランス", away: "パラグアイ", hs: 1, as: 0, date: "2026-07-06" },
+  { round: 5, home: "ノルウェー", away: "ブラジル", hs: 2, as: 1, date: "2026-07-05" },
+  { round: 5, home: "イングランド", away: "メキシコ", hs: 3, as: 2, date: "2026-07-05" },
+  { round: 5, home: "スペイン", away: "ポルトガル", hs: 1, as: 0, date: "2026-07-06" },
+  { round: 5, home: "ベルギー", away: "アメリカ", hs: 4, as: 1, date: "2026-07-05" },
+  { round: 5, home: "アルゼンチン", away: "エジプト", hs: 3, as: 2, date: "2026-07-07" },
+  // QF（準々決勝, 7/10〜7/11）
+  { round: 6, home: "フランス", away: "モロッコ", hs: 2, as: 0, date: "2026-07-10" },
+  { round: 6, home: "イングランド", away: "ノルウェー", hs: 2, as: 1, date: "2026-07-10" },
+  { round: 6, home: "スペイン", away: "ベルギー", hs: 2, as: 1, date: "2026-07-11" },
+  { round: 6, home: "アルゼンチン", away: "スイス", hs: 3, as: 1, date: "2026-07-11" },
 ];
 // ロック対象（ステージ→確定済みチーム集合）。OFFICIAL_KO_RESULTSから生成。
 var KO_LOCKED = (function () { var o = {}; OFFICIAL_KO_RESULTS.forEach(function (r) { var st = KO_RS[r.round]; if (!st) return; (o[st] = o[st] || {})[r.home] = 1; o[st][r.away] = 1; }); return o; })();
@@ -621,6 +633,46 @@ function computeRankViews(members, teams, dec, groups, N) {
   var out = {};
   members.forEach(function (m) { out[m.name] = { chalk: chalkRank[m.name], sim: simPos[m.name], exp: expRank[m.name] }; });
   return out;
+}
+
+// 残り4チーム(準決勝)専用。SF/決勝/3位の全通り(最大16)を列挙し、各参加者の順位変動を算出。
+// dec.qf=4強。leftRes/rightResでSFの左右組を判定。返り値: 首位早見(byChamp)・各人の可能性(byMember)。
+function computeFourTeamScenarios(members, dec, groups, leftRes, rightRes) {
+  try {
+    var semis = (dec.qf || []).slice();
+    if (semis.length !== 4 || (dec.sf && dec.sf.length)) return null; // SF未消化のときだけ
+    var leftN = {}, rightN = {};
+    (leftRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { if (t && t.n) leftN[t.n] = 1; }); });
+    (rightRes || []).forEach(function (m) { (m.teams || []).forEach(function (t) { if (t && t.n) rightN[t.n] = 1; }); });
+    var leftS = semis.filter(function (n) { return leftN[n]; });
+    var rightS = semis.filter(function (n) { return rightN[n]; });
+    if (leftS.length !== 2 || rightS.length !== 2) return null;
+    var part = []; Object.keys(GRP).forEach(function (g) { var a = groups[g] || []; if (a.some(function (t) { return (t.mp || 0) > 0; })) a.slice(0, 2).forEach(function (t) { if (t && t.n) part.push(t.n); }); });
+    var pre = members.map(function (m) { return { name: m.name, picks: precompMember(m, groups) }; });
+    var M = members.length;
+    var byMember = {}; members.forEach(function (m) { byMember[m.name] = { best: M, worst: 1, firsts: 0 }; });
+    var champLead = {}; semis.forEach(function (n) { champLead[n] = {}; });
+    var total = 0;
+    [0, 1].forEach(function (a) { var sf1w = leftS[a], sf1l = leftS[1 - a];
+      [0, 1].forEach(function (b) { var sf2w = rightS[b], sf2l = rightS[1 - b];
+        var finalists = [sf1w, sf2w];
+        [sf1w, sf2w].forEach(function (champ) {
+          [sf1l, sf2l].forEach(function (third) {
+            total++;
+            var br = { r32: dec.r32 || [], r16: dec.r16 || [], qf: dec.qf || [], sf: finalists, final: finalists, champ: champ, third: third };
+            var sk = { r32: part, r16: br.r32, qf: br.r16, sf: br.qf, final: br.sf, champ: br.champ, third: br.third };
+            var scored = pre.map(function (p) { return { name: p.name, total: fastScore(p.picks, sk) }; });
+            scored.sort(function (x, y) { return y.total - x.total; });
+            scored.forEach(function (x, i) { var mm = byMember[x.name], r = i + 1; if (r < mm.best) mm.best = r; if (r > mm.worst) mm.worst = r; if (r === 1) mm.firsts++; });
+            if (scored[0]) { var d = champLead[champ]; d[scored[0].name] = (d[scored[0].name] || 0) + 1; }
+          });
+        });
+      });
+    });
+    var byChamp = {};
+    semis.forEach(function (n) { var d = champLead[n], best = null, bc = 0; Object.keys(d).forEach(function (k) { if (d[k] > bc) { bc = d[k]; best = k; } }); byChamp[n] = { leader: best, varies: Object.keys(d).length > 1 }; });
+    return { semis: semis, leftS: leftS, rightS: rightS, total: total, byMember: byMember, byChamp: byChamp };
+  } catch (e) { return null; }
 }
 
 // 確定済みの公式結果(OFFICIAL_GROUP_RESULTS / OFFICIAL_KO_RESULTS)を、DBの大会データに
@@ -1343,6 +1395,14 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
   var groupsForScore = (tour && tour.groups) || {};
   var thirdSet = thirdSetOf(groupsForScore); // 3位通過判定用（実グループ結果ベース）
   var liveR32 = useMemo(function () { return resolveLiveR32(tour); }, [tour]); // 最高/最低ポイント試算のR32解決
+  // 残り4チーム(準決勝)専用シミュ
+  var fourSim = useMemo(function () {
+    try {
+      var mem = (list || []).filter(function (r) { return r && r.gl; }).map(function (r) { return { name: r.name, gl: r.gl, des: r.des }; });
+      if (mem.length < 2) return null;
+      return computeFourTeamScenarios(mem, (tour && tour.ko) || {}, groupsForScore, liveR32.leftRes, liveR32.rightRes);
+    } catch (e) { return null; }
+  }, [list, tour, groupsForScore, liveR32]);
   // まだ可能性のある順位（最高=自分が最も伸びる勝ち上がり時の順位 / 最低=最も伸びない時の順位）
   var rankRange = useMemo(function () {
     try {
@@ -1476,14 +1536,50 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
     <div className="fade-in">
       <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）") + "　/　得点の左「◯-◯位」＝まだ可能性のある最終順位"} />
 
-      {simActive && (
-        <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "rgba(168,85,247,.12)", border: "1px solid " + $.purple + "55", color: $.purpleL, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
-          🔮 トーナメントのシミュレーション結果を反映中（この端末だけの試算）。<span style={{ color: $.dim, fontWeight: 400 }}>下の🔄リセット、または「⚽ 途中経過」タブで元に戻せます。</span>
-        </div>
-      )}
+      {/* 残り4チーム（準決勝）専用シミュ */}
+      {fourSim && (function () {
+        var conts = Object.keys(fourSim.byMember).map(function (n) { return { name: n, f: fourSim.byMember[n].firsts, best: fourSim.byMember[n].best, worst: fourSim.byMember[n].worst }; }).filter(function (x) { return x.f > 0; }).sort(function (a, b) { return b.f - a.f || a.best - b.best; });
+        return (
+          <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(245,197,24,.07)", border: "1px solid " + $.gold + "55" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: $.gold, marginBottom: 4 }}>🏆 残り4チームで順位はこう決まる <span style={{ fontSize: 10, color: $.dim, fontWeight: 400 }}>（全{fourSim.total}通り）</span></div>
+            <div style={{ fontSize: 11, color: $.txt2, marginBottom: 8, display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
+              <span>準決勝：</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><Fl n={fourSim.leftS[0]} s={13} />{fourSim.leftS[0]} <span style={{ color: $.dim }}>vs</span> <Fl n={fourSim.leftS[1]} s={13} />{fourSim.leftS[1]}</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><Fl n={fourSim.rightS[0]} s={13} />{fourSim.rightS[0]} <span style={{ color: $.dim }}>vs</span> <Fl n={fourSim.rightS[1]} s={13} />{fourSim.rightS[1]}</span>
+            </div>
+            <div style={{ fontSize: 10, color: $.dim, fontWeight: 700, marginBottom: 3 }}>👑 優勝チーム別・首位になる人</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 5, marginBottom: 10 }}>
+              {fourSim.semis.map(function (team) {
+                var lead = fourSim.byChamp[team] || {};
+                return (
+                  <div key={team} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, padding: "5px 8px", borderRadius: 6, background: "rgba(0,0,0,.2)" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontWeight: 700, minWidth: 74 }}><Fl n={team} s={13} />{team}</span>
+                    <span style={{ color: $.dim }}>→</span>
+                    <span style={{ color: $.goldL, fontWeight: 700 }}>🥇 {lead.leader || "—"}{lead.varies ? "…" : ""}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 10, color: $.dim, fontWeight: 700, marginBottom: 3 }}>まだ1位の可能性がある人（{conts.length}名）</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {conts.map(function (c) {
+                var isMe = c.name === myName_;
+                return (
+                  <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "4px 8px", borderRadius: 5, background: isMe ? "rgba(245,197,24,.12)" : "rgba(0,0,0,.15)" }}>
+                    <span style={{ fontWeight: 700, flex: 1, color: isMe ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
+                    <span style={{ color: $.pitchL, fontWeight: 700, whiteSpace: "nowrap" }}>優勝の目 {c.f}/{fourSim.total}</span>
+                    <span style={{ color: $.dim, whiteSpace: "nowrap" }}>順位 {c.best === c.worst ? c.best + "位" : c.best + "-" + c.worst + "位"}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>準決勝・決勝・3位決定戦の全パターンで各自の得点・順位を計算。「…」は優勝相手/3位次第で首位が変わることを表す。</div>
+          </div>
+        );
+      })()}
 
-      {/* 決勝T試算: 参加者を選んで、その人が最高/最低順位になる勝ち上がりを反映 */}
-      {rows.length > 0 && (function () {
+      {/* 決勝T試算（一旦非表示） */}
+      {false && rows.length > 0 && (function () {
         var simReady = (liveR32.leftRes || []).concat(liveR32.rightRes || []).reduce(function (a, m) { return a + (m.teams || []).length; }, 0) === 32;
         // 残りの未確定試合数 → 起こりうる組み合わせ数(2^n)
         var dko = (tour && tour.ko) || {};
@@ -1736,7 +1832,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
       })()}
 
       {/* 決勝トーナメント表（ランキングの下・クリックで勝ち上がりシミュレーション） */}
-      <TournamentBracket tour={tour} simKo={simKo} simAdv={simAdv} resetSim={resetSim} simActive={simActive} />
+      <TournamentBracket tour={tour} readOnly />
 
       {/* みんなの予想（一覧マトリクス）— ランキングの下 */}
       {rows.length > 0 && (
@@ -2819,12 +2915,13 @@ function Third3({ ranking }) {
   );
 }
 // 決勝トーナメント表（クリックで勝ち上がりシミュレーション／ランキングに反映）。ランキング画面に表示。
-function TournamentBracket({ tour, simKo, simAdv, resetSim, simActive }) {
+function TournamentBracket({ tour, simKo, simAdv, resetSim, simActive, readOnly }) {
   var groups = (tour && tour.groups) || {};
   var ko = (tour && tour.ko) || {};
-  var simK = simKo || ko;
-  var hasAnyGroup = Object.keys(groups || {}).length > 0;
   var noop = function () {};
+  var simK = readOnly ? ko : (simKo || ko);
+  var adv = readOnly ? noop : (simAdv || noop);
+  var hasAnyGroup = Object.keys(groups || {}).length > 0;
   var liveGl = useMemo(function () { return deriveGlFromTour(groups); }, [groups]);
   var liveTp = useMemo(function () { return Object.assign({}, deriveTpProvisional(groups), (ko.r32 && ko.r32.length) ? deriveTpFromTour(ko, groups) : {}); }, [ko, groups]);
   var leftRes = useMemo(function () { try { return LR32.map(function (m) { return { id: m.id, seeds: m.s, teams: m.s.map(function (s) { return resolveSeed(s, liveGl, liveTp); }) }; }); } catch (e) { return []; } }, [liveGl, liveTp]);
@@ -2832,17 +2929,17 @@ function TournamentBracket({ tour, simKo, simAdv, resetSim, simActive }) {
   var leftD = useMemo(function () { return deriveRounds(leftRes, simK); }, [leftRes, simK]);
   var rightD = useMemo(function () { return deriveRounds(rightRes, simK); }, [rightRes, simK]);
   var koScores = useMemo(function () { return buildKoScores(ko); }, [ko]);
-  var ctx = { ko: simK, des: { A: null, B: null, C: null }, adv: simAdv || noop, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true, koScores: koScores };
+  var ctx = { ko: simK, des: { A: null, B: null, C: null }, adv: adv, gl: liveGl, tp: liveTp, pick3: noop, setAg: noop, readOnly: true, koScores: koScores };
   if (!hasAnyGroup) return null;
   return (
     <div style={{ marginTop: 30, marginBottom: 24 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 2 }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: $.gold, letterSpacing: 1 }}>🏆 決勝トーナメント表</div>
-        <button onClick={resetSim || noop} disabled={!simActive} style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: simActive ? "pointer" : "default", border: "1px solid " + (simActive ? $.gold + "70" : $.border), background: simActive ? "rgba(251,191,36,.10)" : "transparent", color: simActive ? $.goldL : $.dim }}>🔄 リセット</button>
+        {!readOnly && <button onClick={resetSim || noop} disabled={!simActive} style={{ fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 6, cursor: simActive ? "pointer" : "default", border: "1px solid " + (simActive ? $.gold + "70" : $.border), background: simActive ? "rgba(251,191,36,.10)" : "transparent", color: simActive ? $.goldL : $.dim }}>🔄 リセット</button>}
       </div>
-      <div style={{ fontSize: 11, color: simActive ? $.purpleL : $.dim, marginBottom: 10 }}>{simActive ? "🔮 シミュレーション中：結果はランキングに反映（この端末だけ）" : "国名をクリックすると勝ち上がりをシミュレーションでき、上のランキングに反映されます"}</div>
+      <div style={{ fontSize: 11, color: $.dim, marginBottom: 10 }}>{readOnly ? "現在の結果を表示（勝者クリックは無効。今後の試合が確定すると自動で反映）" : (simActive ? "🔮 シミュレーション中：結果はランキングに反映（この端末だけ）" : "国名をクリックすると勝ち上がりをシミュレーションでき、上のランキングに反映されます")}</div>
       <BView leftRes={leftRes} rightRes={rightRes} leftD={leftD} rightD={rightD} ko={simK} ctx={ctx} />
-      {simK.sf && simK.sf.length >= 2 && <ThirdP ko={simK} adv={simAdv || noop} />}
+      {simK.sf && simK.sf.length >= 2 && <ThirdP ko={simK} adv={adv} />}
     </div>
   );
 }
