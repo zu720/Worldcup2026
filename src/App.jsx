@@ -17,56 +17,14 @@ import {
 import { hasSupabase } from "./lib/supabase";
 
 // ═══════════════════════════════════════════════════════════
-// Stadium backdrop（自己完結SVG：写真を透過させたようなピッチ＋照明）
-// 外部画像に依存しないよう data URI 化して背景レイヤーに敷く。
-// ═══════════════════════════════════════════════════════════
-var STADIUM_SVG =
-  "<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='800' viewBox='0 0 1200 800' preserveAspectRatio='xMidYMax slice'>" +
-    "<defs>" +
-      "<linearGradient id='pit' x1='0' y1='0' x2='0' y2='1'>" +
-        "<stop offset='0' stop-color='#3ad597' stop-opacity='0.55'/>" +
-        "<stop offset='1' stop-color='#0a6644' stop-opacity='0.55'/>" +
-      "</linearGradient>" +
-      "<radialGradient id='lamp' cx='0.5' cy='0.5' r='0.5'>" +
-        "<stop offset='0' stop-color='#fff4cf' stop-opacity='0.55'/>" +
-        "<stop offset='1' stop-color='#fff4cf' stop-opacity='0'/>" +
-      "</radialGradient>" +
-      "<linearGradient id='stand' x1='0' y1='0' x2='0' y2='1'>" +
-        "<stop offset='0' stop-color='#1a2c58' stop-opacity='0'/>" +
-        "<stop offset='1' stop-color='#16305f' stop-opacity='0.5'/>" +
-      "</linearGradient>" +
-    "</defs>" +
-    // 照明の光（左右上）
-    "<ellipse cx='150' cy='90' rx='420' ry='340' fill='url(#lamp)'/>" +
-    "<ellipse cx='1050' cy='90' rx='420' ry='340' fill='url(#lamp)'/>" +
-    // 観客スタンドの陰
-    "<rect x='0' y='330' width='1200' height='180' fill='url(#stand)'/>" +
-    // ピッチ（遠近台形）
-    "<polygon points='330,500 870,500 1200,800 0,800' fill='url(#pit)'/>" +
-    // 芝の縞（遠近）
-    "<polygon points='330,500 405,500 250,800 0,800 0,760' fill='#ffffff' fill-opacity='0.05'/>" +
-    "<polygon points='485,500 560,500 620,800 390,800' fill='#ffffff' fill-opacity='0.06'/>" +
-    "<polygon points='640,500 715,500 990,800 760,800' fill='#ffffff' fill-opacity='0.05'/>" +
-    // ライン
-    "<g stroke='#ffffff' stroke-opacity='0.3' fill='none' stroke-width='2.5'>" +
-      "<polygon points='330,500 870,500 1200,800 0,800'/>" +
-      "<line x1='330' y1='500' x2='870' y2='500'/>" +
-      "<ellipse cx='600' cy='500' rx='95' ry='22'/>" +
-      "<polygon points='445,655 755,655 905,800 295,800'/>" +
-    "</g>" +
-  "</svg>";
-var STADIUM_URI = "data:image/svg+xml," + encodeURIComponent(STADIUM_SVG);
-
-// ═══════════════════════════════════════════════════════════
 // Theme
 // ═══════════════════════════════════════════════════════════
 var $ = {
-  // ベスト4記念：明るく華やかなスタジアム照明。ゴールド(上)＋紫(左上)＋青(右上)＋ピッチ緑(下)を
-  // 少し持ち上げたブルーパープル基調に重ねる。文字は明色のまま読めるよう暗さは確保。
-  bg: "radial-gradient(880px 520px at 50% -12%, rgba(255,209,102,.24), transparent 60%), radial-gradient(720px 640px at 6% 8%, rgba(176,123,224,.20), transparent 58%), radial-gradient(760px 660px at 94% 16%, rgba(91,155,232,.20), transparent 58%), url('" + STADIUM_URI + "') center bottom / cover no-repeat fixed, linear-gradient(165deg, #1b2c58 0%, #1d2656 42%, #271d52 100%)",
-  panel: "#16254a",            // ヘッダー/モーダル等の面
-  card: "rgba(255,255,255,.06)",
-  cardB: "rgba(255,255,255,.10)",
+  // 公式中継のようなディープネイビー基調＋上部に控えめなスタジアム光
+  bg: "radial-gradient(1100px 460px at 50% -8%, rgba(56,110,170,.20), transparent 70%), #0b1524",
+  panel: "#0f1c30",            // ヘッダー/モーダル等の面
+  card: "rgba(255,255,255,.045)",
+  cardB: "rgba(255,255,255,.085)",
   gold: "#f4c14b",
   goldL: "#ffd97a",
   goldD: "#9a7016",
@@ -88,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v27";
+var APP_VERSION = "v28";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -934,7 +892,7 @@ export default function App() {
     <div>
       <Styles />
       <div style={{ fontFamily: font, background: $.bg, color: $.txt, minHeight: "100vh", paddingBottom: 100 }}>
-        <div style={{ position: "fixed", inset: 0, opacity: 0.06, backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "38px 38px", pointerEvents: "none" }} />
+        <div style={{ position: "fixed", inset: 0, opacity: 0.04, backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
         <Header tab={tab} setTab={setTab} nm={nm} score={score} logout={logout} tour={tour} openAdmin={function () { setAdminOpen(true); }} openRules={function () { setRulesOpen(true); }} />
         <main className="main-pad" style={{ maxWidth: 1440, margin: "0 auto", padding: "20px 16px" }}>
           {tab === "vote" && (
