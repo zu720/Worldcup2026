@@ -20,11 +20,12 @@ import { hasSupabase } from "./lib/supabase";
 // Theme
 // ═══════════════════════════════════════════════════════════
 var $ = {
-  // 公式中継のようなディープネイビー基調＋上部に控えめなスタジアム光
-  bg: "radial-gradient(1100px 460px at 50% -8%, rgba(56,110,170,.20), transparent 70%), #0b1524",
-  panel: "#0f1c30",            // ヘッダー/モーダル等の面
-  card: "rgba(255,255,255,.045)",
-  cardB: "rgba(255,255,255,.085)",
+  // ベスト4記念：明るく華やかなスタジアム照明。ゴールド(上)＋紫(左上)＋青(右上)＋ピッチ緑(下)を
+  // 少し持ち上げたブルーパープル基調に重ねる。文字は明色のまま読めるよう暗さは確保。
+  bg: "radial-gradient(880px 520px at 50% -12%, rgba(255,209,102,.26), transparent 60%), radial-gradient(720px 640px at 6% 8%, rgba(176,123,224,.24), transparent 58%), radial-gradient(760px 660px at 94% 16%, rgba(91,155,232,.24), transparent 58%), radial-gradient(1000px 760px at 50% 112%, rgba(61,220,151,.16), transparent 60%), linear-gradient(165deg, #1b2c58 0%, #1d2656 42%, #271d52 100%)",
+  panel: "#16254a",            // ヘッダー/モーダル等の面
+  card: "rgba(255,255,255,.06)",
+  cardB: "rgba(255,255,255,.10)",
   gold: "#f4c14b",
   goldL: "#ffd97a",
   goldD: "#9a7016",
@@ -46,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v25";
+var APP_VERSION = "v26";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -892,7 +893,7 @@ export default function App() {
     <div>
       <Styles />
       <div style={{ fontFamily: font, background: $.bg, color: $.txt, minHeight: "100vh", paddingBottom: 100 }}>
-        <div style={{ position: "fixed", inset: 0, opacity: 0.04, backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
+        <div style={{ position: "fixed", inset: 0, opacity: 0.06, backgroundImage: "radial-gradient(circle at 1px 1px,white 1px,transparent 0)", backgroundSize: "38px 38px", pointerEvents: "none" }} />
         <Header tab={tab} setTab={setTab} nm={nm} score={score} logout={logout} tour={tour} openAdmin={function () { setAdminOpen(true); }} openRules={function () { setRulesOpen(true); }} />
         <main className="main-pad" style={{ maxWidth: 1440, margin: "0 auto", padding: "20px 16px" }}>
           {tab === "vote" && (
