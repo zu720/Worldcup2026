@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v29";
+var APP_VERSION = "v30";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -1406,6 +1406,8 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
   var groupsForScore = (tour && tour.groups) || {};
   var thirdSet = thirdSetOf(groupsForScore); // 3位通過判定用（実グループ結果ベース）
   var liveR32 = useMemo(function () { return resolveLiveR32(tour); }, [tour]); // 最高/最低ポイント試算のR32解決
+  // 打ち上げ欠席者（管理画面で設定）。ランキングで欠席マーク＋薄色表示に使う。
+  var absentSet = useMemo(function () { return new Set(((tour && tour.ko && tour.ko.absent) || [])); }, [tour]);
   // 残り4チーム(準決勝)専用シミュ
   var fourSim = useMemo(function () {
     try {
@@ -1707,6 +1709,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         var renderRow = function (r, i) {
           var isMe = r.name === myName_;
           var isOpen = open === r.name;
+          var isAbsent = absentSet.has(r.name);
           var h = memberHits(r);
           var rr = rankRange[r.name];
           var pr = probs && probs[r.name];
@@ -1719,6 +1722,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 background: isMe ? "linear-gradient(135deg,rgba(245,197,24,.08),transparent 60%)" : $.card,
                 boxShadow: isMe ? "0 0 14px rgba(245,197,24,.15)" : "none",
                 overflow: "hidden",
+                opacity: isAbsent ? .5 : 1,
               }}
             >
               <div
@@ -1732,6 +1736,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, flexShrink: 1 }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: isMe ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
                   {isMe && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: $.gold, color: "#000", fontWeight: 700, flexShrink: 0 }}>あなた</span>}
+                  {isAbsent && <span title="打ち上げ欠席" style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(255,255,255,.08)", color: $.dim, fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap", border: "1px solid " + $.border }}>🍻欠席</span>}
                   {h.dec > 0 && <span className="lb-hits" title="確定グループでの突破的中・うち順位的中" style={{ fontSize: 9, color: $.dim, flexShrink: 0, whiteSpace: "nowrap" }}>突破<b style={{ color: $.pitchL }}>{h.brk}</b>/順<b style={{ color: $.gold }}>{h.pos}</b></span>}
                 </div>
                 <div className="lb-bonuses leaderboard-row-bonuses" style={{ display: "flex", gap: 4, flex: 1, flexWrap: "nowrap", justifyContent: "flex-end", overflow: "hidden" }}>
@@ -2267,7 +2272,7 @@ function AdminPanel({ tour, setTour, close }) {
     setKoTouched(true);
     setKoL(function (prev) {
       try {
-        var n = { r32: (prev.r32 || []).slice(), r16: (prev.r16 || []).slice(), qf: (prev.qf || []).slice(), sf: (prev.sf || []).slice(), final: (prev.final || []).slice(), champ: prev.champ, third: prev.third, matches: prev.matches, teamCards: prev.teamCards };
+        var n = { r32: (prev.r32 || []).slice(), r16: (prev.r16 || []).slice(), qf: (prev.qf || []).slice(), sf: (prev.sf || []).slice(), final: (prev.final || []).slice(), champ: prev.champ, third: prev.third, matches: prev.matches, teamCards: prev.teamCards, absent: prev.absent };
         if (stage === "champ" || stage === "third") { n[stage] = n[stage] === tn ? null : tn; return n; }
         var idx = n[stage].indexOf(tn);
         if (idx >= 0) {
@@ -2342,6 +2347,8 @@ function AdminPanel({ tour, setTour, close }) {
       var mergedMatches = dedupeMatches(grpMatches.concat(koMatches));
       var newKo = Object.assign({}, ko, { final: (ko.sf || []).slice(), matches: mergedMatches });
       if (tour && tour.ko) { newKo.teamCards = tour.ko.teamCards; }
+      // 打ち上げ欠席者リストは常に最新(tour)を採用し、ブラケット保存で消えないようにする。
+      if (tour && tour.ko && tour.ko.absent) newKo.absent = tour.ko.absent;
       await saveTournament({ phase: phase, vote_locked: voteLocked, ko: newKo });
       setTour(function (t) { return Object.assign({}, t, { phase: phase, vote_locked: voteLocked, ko: newKo }); });
       setKoTouched(false);
@@ -2545,6 +2552,9 @@ function AdminPanel({ tour, setTour, close }) {
             {/* Visit stats */}
             <AdminVisitStats />
 
+            {/* 打ち上げ欠席者の設定 */}
+            <AdminAbsentees tour={tour} setTour={setTour} />
+
             {/* 決勝T試算の操作ログ */}
             <AdminSimLog />
 
@@ -2672,6 +2682,60 @@ function AdminSimLog() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+// ═══════════════════════════════════════════════════════════
+// Admin: 打ち上げ欠席者の設定（tour.ko.absent に名前配列で保存）
+// ═══════════════════════════════════════════════════════════
+function AdminAbsentees({ tour, setTour }) {
+  var [names, setNames] = useState([]);
+  var [loading, setLoading] = useState(true);
+  var [err, setErr] = useState("");
+  var [busy, setBusy] = useState("");
+  function reload() {
+    setLoading(true);
+    getAllPredictions()
+      .then(function (d) { setNames((d || []).map(function (p) { return p.name; })); setLoading(false); setErr(""); })
+      .catch(function (e) { setErr(e.message || String(e)); setLoading(false); });
+  }
+  useEffect(function () { reload(); }, []);
+  var absent = (tour && tour.ko && tour.ko.absent) || [];
+  async function toggle(name) {
+    if (busy) return;
+    var cur = (((tour && tour.ko && tour.ko.absent) || [])).slice();
+    var i = cur.indexOf(name);
+    if (i >= 0) cur.splice(i, 1); else cur.push(name);
+    var newKo = Object.assign({}, (tour && tour.ko) || {}, { absent: cur });
+    setBusy(name);
+    try {
+      await saveTournament({ ko: newKo });
+      setTour(function (t) { return Object.assign({}, t, { ko: newKo }); });
+    } catch (e) { setErr(e.message || String(e)); }
+    setBusy("");
+  }
+  return (
+    <div style={{ marginTop: 18, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 8, border: "1px solid " + $.border }}>
+      <div style={{ fontSize: 12, color: $.gold, fontWeight: 700, marginBottom: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>🍻 打ち上げ欠席者</span>
+        <button onClick={reload} style={{ background: "transparent", border: "1px solid " + $.border, color: $.txt2, fontSize: 11, padding: "3px 10px", borderRadius: 5, cursor: "pointer" }}>↻ 再読込</button>
+      </div>
+      <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>来られない人を選ぶと、ランキングで<b>🍻欠席マーク</b>が付き、その行が薄く表示されます（順位・得点はそのまま）。</div>
+      {loading && <div style={{ fontSize: 11, color: $.dim }}>読込中...</div>}
+      {err && <div style={{ fontSize: 11, color: $.redL }}>エラー: {err}</div>}
+      {!loading && names.length === 0 && <div style={{ fontSize: 11, color: $.dim }}>参加者がまだいません</div>}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {names.map(function (nm) {
+          var on = absent.indexOf(nm) >= 0;
+          return (
+            <button key={nm} onClick={function () { toggle(nm); }} disabled={busy === nm}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "6px 11px", borderRadius: 7, cursor: busy === nm ? "wait" : "pointer", border: "1px solid " + (on ? $.red + "88" : $.border), background: on ? "rgba(240,109,109,.14)" : "rgba(0,0,0,.2)", color: on ? $.redL : $.txt2, opacity: on ? 1 : .85 }}>
+              <span>{on ? "🍻" : "◻︎"}</span>{nm}{on ? " 欠席" : ""}
+            </button>
+          );
+        })}
+      </div>
+      {absent.length > 0 && <div style={{ fontSize: 10, color: $.dim, marginTop: 8 }}>欠席 {absent.length}名: {absent.join("、")}</div>}
     </div>
   );
 }
