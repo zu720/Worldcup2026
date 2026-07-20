@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v38";
+var APP_VERSION = "v39";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -1477,6 +1477,17 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
     }).sort(function (a, b) { return b.score.total - a.score.total; });
   }, [list, koForScore, groupsForScore, liveStarted, tour]);
 
+  // 偏差値（全員の得点が母集団）。偏差値 = 50 + 10 * (得点 - 平均) / 標準偏差。
+  var scoreStats = useMemo(function () {
+    var vals = rows.map(function (r) { return r.score.total; });
+    var n = vals.length;
+    if (!n) return { mean: 0, std: 0 };
+    var mean = vals.reduce(function (a, b) { return a + b; }, 0) / n;
+    var variance = vals.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / n;
+    return { mean: mean, std: Math.sqrt(variance) };
+  }, [rows]);
+  function hensachi(v) { return scoreStats.std > 0 ? 50 + 10 * (v - scoreStats.mean) / scoreStats.std : 50; }
+
   // チーム別 投票状況集計
   var teamStats = useMemo(function () {
     var n = list.length;
@@ -1806,9 +1817,12 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                     <span title={"2000回シミュレーションの平均順位で並べた順位（番狂わせ込み・平均 " + (pr.exp ? pr.exp.toFixed(1) : "-") + "位）"} style={{ color: $.blueL || $.blue }}>シミュ{pr.sim}位</span>
                   </span>}
                 </div>
-                <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", alignItems: "baseline", gap: 3, flexShrink: 0 }}>
-                  <div style={{ fontFamily: fontH, fontSize: 17, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
-                  <div style={{ fontSize: 10, color: $.txt2 }}>点</div>
+                <div className="lb-score-block leaderboard-row-score" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0, gap: 1 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                    <div style={{ fontFamily: fontH, fontSize: 17, color: $.gold, lineHeight: 1 }}>{r.score.total.toFixed(1)}</div>
+                    <div style={{ fontSize: 10, color: $.txt2 }}>点</div>
+                  </div>
+                  <div style={{ fontSize: 9, color: $.dim, whiteSpace: "nowrap" }} title="全員を母集団とした偏差値">偏差値 <b style={{ color: $.txt2 }}>{hensachi(r.score.total).toFixed(1)}</b></div>
                 </div>
                 <div className="lb-arrow" style={{ color: $.dim, fontSize: 11, flexShrink: 0 }}>{isOpen ? "▲" : "▼"}</div>
               </div>
