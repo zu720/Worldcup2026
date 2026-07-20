@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v31";
+var APP_VERSION = "v32";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -1551,19 +1551,20 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
 
       {/* 打ち上げ版ランキング（欠席者を除く）＋ POT1〜POT4 分け */}
       {(function () {
+        var rankOf = {}; rows.forEach(function (r, i) { rankOf[r.name] = i + 1; }); // 三幸園ランキング(全体)での順位
         var attendees = rows.filter(function (r) { return !absentSet.has(r.name); });
         if (attendees.length < 2) return null;
         var N = attendees.length, base = Math.floor(N / 4), rem = N % 4;
         var sizes = [0, 1, 2, 3].map(function (i) { return base + (i < rem ? 1 : 0); }); // 上位POTから多めに
         var pots = [], idx = 0;
-        sizes.forEach(function (sz) { pots.push(attendees.slice(idx, idx + sz).map(function (r, j) { return { r: r, rank: idx + j + 1 }; })); idx += sz; });
+        sizes.forEach(function (sz) { pots.push(attendees.slice(idx, idx + sz).map(function (r) { return { r: r, rank: rankOf[r.name] }; })); idx += sz; });
         var POT_ACCENT = [$.gold, $.blueL || $.blue, $.purpleL, $.pitchL];
         var POT_BG = ["rgba(245,197,24,.08)", "rgba(91,155,232,.08)", "rgba(176,123,224,.08)", "rgba(61,220,151,.08)"];
         var absN = rows.length - N;
         return (
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(255,255,255,.03)", border: "1px solid " + $.gold + "44" }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: $.gold, marginBottom: 2 }}>🍻 三幸園ランキング 打ち上げ版</div>
-            <div style={{ fontSize: 10, color: $.dim, marginBottom: 10 }}>打ち上げ参加者<b>{N}名</b>の最終順位{absN > 0 ? "（欠席" + absN + "名を除外）" : ""}。上位から <b>POT1〜POT4</b> に分けています。</div>
+            <div style={{ fontSize: 10, color: $.dim, marginBottom: 10 }}>打ち上げ参加者<b>{N}名</b>を上位から <b>POT1〜POT4</b> に分けています{absN > 0 ? "（欠席" + absN + "名を除外）" : ""}。各行の数字＝<b>三幸園ランキングでの順位</b>。</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 }}>
               {pots.map(function (pod, pi) {
                 return (
@@ -1572,10 +1573,10 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                     <div style={{ display: "flex", flexDirection: "column" }}>
                       {pod.map(function (o) {
                         var isMe = o.r.name === myName_;
-                        var medal = o.rank === 1 ? "🥇" : o.rank === 2 ? "🥈" : o.rank === 3 ? "🥉" : "#" + o.rank;
+                        var medal = o.rank === 1 ? "🥇" : o.rank === 2 ? "🥈" : o.rank === 3 ? "🥉" : o.rank + "位";
                         return (
                           <div key={o.r.name} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", background: isMe ? "rgba(245,197,24,.12)" : "transparent", borderTop: "1px solid rgba(255,255,255,.04)" }}>
-                            <span style={{ fontFamily: fontH, fontSize: 13, color: o.rank <= 3 ? POT_ACCENT[pi] : $.dim, width: 26, flexShrink: 0 }}>{medal}</span>
+                            <span title={"三幸園ランキング " + o.rank + "位"} style={{ fontFamily: fontH, fontSize: 13, color: o.rank <= 3 ? POT_ACCENT[pi] : $.txt2, width: 34, flexShrink: 0, textAlign: "center" }}>{medal}</span>
                             <span style={{ fontSize: 13, fontWeight: 700, color: isMe ? $.gold : $.txt, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.r.name}{isMe ? "（あなた）" : ""}</span>
                             <span style={{ fontFamily: fontH, fontSize: 14, color: $.gold, flexShrink: 0 }}>{o.r.score.total.toFixed(1)}</span>
                           </div>
