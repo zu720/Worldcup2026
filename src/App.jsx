@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v36";
+var APP_VERSION = "v37";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -1555,8 +1555,8 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         var attendees = rows.filter(function (r) { return !absentSet.has(r.name); });
         if (attendees.length < 2) return null;
         var POTS = 6;
-        // 三幸園（中華）メニューで格付け（上→下）。上はフルコース、最下位はザーサイ。
-        var MENU = ["北京ダック、フカヒレ、カレー炒飯コース", "酢豚、エビチリ、炒飯セット", "焼き餃子定食", "野菜炒め定食", "ピータン", "ザーサイ"];
+        // 三幸園（中華）メニューで格付け（上→下）。コース＞セット＞定食＞単品で格差。最下位はザーサイ。
+        var MENU = ["北京ダックコース", "酢豚セット", "焼き餃子定食", "野菜炒め定食", "ピータン", "ザーサイ"];
         var N = attendees.length, base = Math.floor(N / POTS), rem = N % POTS;
         var sizes = []; for (var pk = 0; pk < POTS; pk++) sizes.push(base + (pk < rem ? 1 : 0)); // 上位POTから多めに
         var pots = [], idx = 0;
