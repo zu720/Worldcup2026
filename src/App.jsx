@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v39";
+var APP_VERSION = "v40";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -1584,7 +1584,6 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
                 return (
                   <div key={pi} style={{ borderRadius: 8, background: POT_BG[pi], border: "1px solid " + POT_ACCENT[pi] + "55", overflow: "hidden" }}>
                     <div style={{ fontFamily: font, fontSize: 13, letterSpacing: .2, color: POT_ACCENT[pi], padding: "6px 10px", borderBottom: "1px solid " + POT_ACCENT[pi] + "33", fontWeight: 800, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}><span style={{ lineHeight: 1.25 }}><span style={{ fontFamily: fontH, letterSpacing: 1, marginRight: 5 }}>POD{pi + 1}</span>クラス{MENU[pi]}</span><span style={{ fontSize: 9, letterSpacing: 0, color: $.dim, flexShrink: 0, whiteSpace: "nowrap", paddingTop: 2 }}>{pod.length}名</span></div>
-                    {pi === POTS - 1 && <div style={{ fontSize: 9, color: $.dim, padding: "3px 10px 0" }}>🥢 実質お通し（本日の人権：なし）</div>}
                     <div style={{ display: "flex", flexDirection: "column" }}>
                       {pod.map(function (o) {
                         var isMe = o.r.name === myName_;
