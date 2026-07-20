@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v37";
+var APP_VERSION = "v38";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -1555,8 +1555,8 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         var attendees = rows.filter(function (r) { return !absentSet.has(r.name); });
         if (attendees.length < 2) return null;
         var POTS = 6;
-        // 三幸園（中華）メニューで格付け（上→下）。コース＞セット＞定食＞単品で格差。最下位はザーサイ。
-        var MENU = ["北京ダックコース", "酢豚セット", "焼き餃子定食", "野菜炒め定食", "ピータン", "ザーサイ"];
+        // POD1〜6のクラス名（中華メニュー・上→下）。表記は「クラス〇〇」。最下位はザーサイ。
+        var MENU = ["北京ダック", "酢豚", "焼き餃子", "野菜炒め", "ピータン", "ザーサイ"];
         var N = attendees.length, base = Math.floor(N / POTS), rem = N % POTS;
         var sizes = []; for (var pk = 0; pk < POTS; pk++) sizes.push(base + (pk < rem ? 1 : 0)); // 上位POTから多めに
         var pots = [], idx = 0;
@@ -1567,12 +1567,12 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         return (
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(255,255,255,.03)", border: "1px solid " + $.gold + "44" }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: $.gold, marginBottom: 2 }}>🍻 三幸園ランキング 打ち上げ版</div>
-            <div style={{ fontSize: 10, color: $.dim, marginBottom: 10 }}>打ち上げ参加者<b>{N}名</b>を上位から<b>6つのPOD</b>（中華メニュー格付け：フルコース〜ザーサイ）に分けています{absN > 0 ? "（欠席" + absN + "名を除外）" : ""}。各行の数字＝<b>三幸園ランキングでの順位</b>。</div>
+            <div style={{ fontSize: 10, color: $.dim, marginBottom: 10 }}>打ち上げ参加者<b>{N}名</b>を上位から<b>6つのPOD</b>（クラス：北京ダック〜ザーサイ）に分けています{absN > 0 ? "（欠席" + absN + "名を除外）" : ""}。各行の数字＝<b>三幸園ランキングでの順位</b>。</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
               {pots.map(function (pod, pi) {
                 return (
                   <div key={pi} style={{ borderRadius: 8, background: POT_BG[pi], border: "1px solid " + POT_ACCENT[pi] + "55", overflow: "hidden" }}>
-                    <div style={{ fontFamily: font, fontSize: 13, letterSpacing: .2, color: POT_ACCENT[pi], padding: "6px 10px", borderBottom: "1px solid " + POT_ACCENT[pi] + "33", fontWeight: 800, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}><span style={{ lineHeight: 1.25 }}><span style={{ opacity: .6 }}>{pi + 1}.</span> {MENU[pi]}</span><span style={{ fontSize: 9, letterSpacing: 0, color: $.dim, flexShrink: 0, whiteSpace: "nowrap", paddingTop: 2 }}>{pod.length}名</span></div>
+                    <div style={{ fontFamily: font, fontSize: 13, letterSpacing: .2, color: POT_ACCENT[pi], padding: "6px 10px", borderBottom: "1px solid " + POT_ACCENT[pi] + "33", fontWeight: 800, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}><span style={{ lineHeight: 1.25 }}><span style={{ fontFamily: fontH, letterSpacing: 1, marginRight: 5 }}>POD{pi + 1}</span>クラス{MENU[pi]}</span><span style={{ fontSize: 9, letterSpacing: 0, color: $.dim, flexShrink: 0, whiteSpace: "nowrap", paddingTop: 2 }}>{pod.length}名</span></div>
                     {pi === POTS - 1 && <div style={{ fontSize: 9, color: $.dim, padding: "3px 10px 0" }}>🥢 実質お通し（本日の人権：なし）</div>}
                     <div style={{ display: "flex", flexDirection: "column" }}>
                       {pod.map(function (o) {
