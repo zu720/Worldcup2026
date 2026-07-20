@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v34";
+var APP_VERSION = "v35";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -1555,8 +1555,8 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         var attendees = rows.filter(function (r) { return !absentSet.has(r.name); });
         if (attendees.length < 2) return null;
         var POTS = 6;
-        // 餃子の三幸園メニューで格付け（上→下）。最下位は無料の卓上の酢。
-        var MENU = ["特上餃子", "焼餃子", "ラーメン", "半チャーハン", "餃子の皮", "卓上の酢"];
+        // 三幸園（中華）メニューで格付け（上→下）。上はフルコースの高級中華、最下位は無料の卓上の酢。
+        var MENU = ["フカヒレ姿煮", "北京ダック", "特上餃子", "半チャーハン", "餃子の皮", "卓上の酢"];
         var N = attendees.length, base = Math.floor(N / POTS), rem = N % POTS;
         var sizes = []; for (var pk = 0; pk < POTS; pk++) sizes.push(base + (pk < rem ? 1 : 0)); // 上位POTから多めに
         var pots = [], idx = 0;
@@ -1567,7 +1567,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         return (
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(255,255,255,.03)", border: "1px solid " + $.gold + "44" }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: $.gold, marginBottom: 2 }}>🍻 三幸園ランキング 打ち上げ版</div>
-            <div style={{ fontSize: 10, color: $.dim, marginBottom: 10 }}>打ち上げ参加者<b>{N}名</b>を上位から<b>6段階のメニュー格付け</b>（特上餃子〜卓上の酢）に分けています{absN > 0 ? "（欠席" + absN + "名を除外）" : ""}。各行の数字＝<b>三幸園ランキングでの順位</b>。</div>
+            <div style={{ fontSize: 10, color: $.dim, marginBottom: 10 }}>打ち上げ参加者<b>{N}名</b>を上位から<b>6つのPOD</b>（中華メニュー格付け：フカヒレ姿煮〜卓上の酢）に分けています{absN > 0 ? "（欠席" + absN + "名を除外）" : ""}。各行の数字＝<b>三幸園ランキングでの順位</b>。</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
               {pots.map(function (pod, pi) {
                 return (
