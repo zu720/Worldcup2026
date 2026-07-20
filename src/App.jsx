@@ -46,7 +46,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v32";
+var APP_VERSION = "v33";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 
@@ -1554,18 +1554,19 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
         var rankOf = {}; rows.forEach(function (r, i) { rankOf[r.name] = i + 1; }); // 三幸園ランキング(全体)での順位
         var attendees = rows.filter(function (r) { return !absentSet.has(r.name); });
         if (attendees.length < 2) return null;
-        var N = attendees.length, base = Math.floor(N / 4), rem = N % 4;
-        var sizes = [0, 1, 2, 3].map(function (i) { return base + (i < rem ? 1 : 0); }); // 上位POTから多めに
+        var POTS = 6;
+        var N = attendees.length, base = Math.floor(N / POTS), rem = N % POTS;
+        var sizes = []; for (var pk = 0; pk < POTS; pk++) sizes.push(base + (pk < rem ? 1 : 0)); // 上位POTから多めに
         var pots = [], idx = 0;
         sizes.forEach(function (sz) { pots.push(attendees.slice(idx, idx + sz).map(function (r) { return { r: r, rank: rankOf[r.name] }; })); idx += sz; });
-        var POT_ACCENT = [$.gold, $.blueL || $.blue, $.purpleL, $.pitchL];
-        var POT_BG = ["rgba(245,197,24,.08)", "rgba(91,155,232,.08)", "rgba(176,123,224,.08)", "rgba(61,220,151,.08)"];
+        var POT_ACCENT = [$.gold, $.blueL || $.blue, $.purpleL, $.pitchL, $.redL, "#e8a13a"];
+        var POT_BG = ["rgba(245,197,24,.08)", "rgba(91,155,232,.08)", "rgba(176,123,224,.08)", "rgba(61,220,151,.08)", "rgba(240,109,109,.08)", "rgba(232,161,58,.08)"];
         var absN = rows.length - N;
         return (
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(255,255,255,.03)", border: "1px solid " + $.gold + "44" }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: $.gold, marginBottom: 2 }}>🍻 三幸園ランキング 打ち上げ版</div>
-            <div style={{ fontSize: 10, color: $.dim, marginBottom: 10 }}>打ち上げ参加者<b>{N}名</b>を上位から <b>POT1〜POT4</b> に分けています{absN > 0 ? "（欠席" + absN + "名を除外）" : ""}。各行の数字＝<b>三幸園ランキングでの順位</b>。</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 }}>
+            <div style={{ fontSize: 10, color: $.dim, marginBottom: 10 }}>打ち上げ参加者<b>{N}名</b>を上位から <b>POT1〜POT6</b> に分けています{absN > 0 ? "（欠席" + absN + "名を除外）" : ""}。各行の数字＝<b>三幸園ランキングでの順位</b>。</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
               {pots.map(function (pod, pi) {
                 return (
                   <div key={pi} style={{ borderRadius: 8, background: POT_BG[pi], border: "1px solid " + POT_ACCENT[pi] + "55", overflow: "hidden" }}>
