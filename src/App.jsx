@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v46";
+var APP_VERSION = "v47";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -2249,37 +2249,43 @@ function SettlementPanel({ rows, absentSet, tour, setTour }) {
 function SettlementPublic({ settlement, myName }) {
   var s = settlement || {};
   var lines = s.lines || [];
+  var payLines = lines.filter(function (l) { return (l.amt || 0) > 0; }); // 支払いが発生する人のみ
   var yen = function (v) { return "¥" + (v || 0).toLocaleString("ja-JP"); };
   var mine = lines.filter(function (l) { return l.name === myName; })[0];
+  var minePays = mine && (mine.amt || 0) > 0;
   var kindColor = function (k) { return k === "傾斜割" ? $.gold : (k && k.indexOf("免除") >= 0) ? $.dim : k === "無料(上位)" ? $.pitchL : $.redL; };
   return (
     <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(245,197,24,.06)", border: "1px solid " + $.gold + "55" }}>
       <div style={{ fontSize: 14, fontWeight: 800, color: $.gold, marginBottom: 2 }}>💴 打ち上げ精算（確定）</div>
-      <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>総額 {yen(s.total)}　/　傾斜基準：{s.basis === "score" ? "点数" : "順位"}{s.at ? "　/　確定 " + new Date(s.at).toLocaleString("ja-JP") : ""}</div>
+      <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>総額 {yen(s.total)}　/　傾斜基準：{s.basis === "score" ? "点数" : "順位"}　/　支払い {payLines.length}名{s.at ? "　/　確定 " + new Date(s.at).toLocaleString("ja-JP") : ""}</div>
       {mine && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(245,197,24,.12)", border: "1px solid " + $.gold + "66", marginBottom: 10 }}>
-          <span style={{ fontSize: 12, color: $.txt2, fontWeight: 700 }}>あなた（{mine.name}）のお支払い</span>
-          <span style={{ fontFamily: fontH, fontSize: 26, color: $.gold, marginLeft: "auto", lineHeight: 1 }}>{yen(mine.amt)}</span>
-          <span style={{ fontSize: 10, color: $.dim }}>{mine.kind}</span>
-        </div>
+        minePays ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(245,197,24,.12)", border: "1px solid " + $.gold + "66", marginBottom: 10 }}>
+            <span style={{ fontSize: 12, color: $.txt2, fontWeight: 700 }}>あなた（{mine.name}）のお支払い</span>
+            <span style={{ fontFamily: fontH, fontSize: 26, color: $.gold, marginLeft: "auto", lineHeight: 1 }}>{yen(mine.amt)}</span>
+            <span style={{ fontSize: 10, color: $.dim }}>{mine.kind}</span>
+          </div>
+        ) : (
+          <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(61,220,151,.10)", border: "1px solid " + $.pitchL + "55", marginBottom: 10, fontSize: 12, fontWeight: 700, color: $.pitchL }}>🎉 あなた（{mine.name}）は支払いなしです（{mine.kind}）</div>
+        )
       )}
       <div style={{ maxHeight: 340, overflowY: "auto", border: "1px solid " + $.border, borderRadius: 8 }}>
         <div style={{ display: "flex", fontSize: 9, color: $.dim, fontWeight: 700, padding: "4px 10px", borderBottom: "1px solid " + $.border, position: "sticky", top: 0, background: $.panel }}>
           <span style={{ width: 34 }}>順位</span><span style={{ flex: 1 }}>名前</span><span style={{ width: 84 }}>区分</span><span style={{ width: 80, textAlign: "right" }}>金額</span>
         </div>
-        {lines.map(function (l) {
+        {payLines.map(function (l) {
           var isMe = l.name === myName;
           return (
             <div key={l.name} style={{ display: "flex", alignItems: "center", fontSize: 12, padding: "5px 10px", borderBottom: "1px solid rgba(255,255,255,.04)", background: isMe ? "rgba(245,197,24,.12)" : "transparent", opacity: l.absent ? .75 : 1 }}>
               <span style={{ width: 34, color: $.dim, fontFamily: fontH }}>{l.rank}</span>
               <span style={{ flex: 1, fontWeight: 700, color: isMe ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.name}{isMe ? "（あなた）" : ""}</span>
               <span style={{ width: 84, fontSize: 9, color: kindColor(l.kind) }}>{l.kind}</span>
-              <span style={{ width: 80, textAlign: "right", fontFamily: fontH, fontSize: 14, color: l.amt === 0 ? $.dim : $.gold }}>{yen(l.amt)}</span>
+              <span style={{ width: 80, textAlign: "right", fontFamily: fontH, fontSize: 14, color: $.gold }}>{yen(l.amt)}</span>
             </div>
           );
         })}
       </div>
-      <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>回収合計 <b style={{ color: $.txt2 }}>{yen(s.collected)}</b>（総額 {yen(s.total)}）　/　参加{s.presentN}名・ｷｬﾝｾﾙ代{s.feeCount}名</div>
+      <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>回収合計 <b style={{ color: $.txt2 }}>{yen(s.collected)}</b>（総額 {yen(s.total)}）　/　支払い{payLines.length}名（上位無料・免除は非表示）</div>
     </div>
   );
 }
