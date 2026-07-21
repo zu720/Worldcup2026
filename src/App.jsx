@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v51";
+var APP_VERSION = "v52";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -1573,12 +1573,12 @@ function ResultsTab({ myName: myName_, tour, setTour, liveStarted, scoringKo, si
 
   return (
     <div className="fade-in">
-      <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）") + "　/　得点の左「◯-◯位」＝まだ可能性のある最終順位"} />
-
-      {/* 確定精算（全員に公開・読み取り専用） */}
+      {/* 確定精算（全員に公開・読み取り専用）— 確定したら最上部に表示 */}
       {tour && tour.ko && tour.ko.settlement && tour.ko.settlement.finalized && (
         <SettlementPublic settlement={tour.ko.settlement} myName={myName_} />
       )}
+
+      <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）") + "　/　得点の左「◯-◯位」＝まだ可能性のある最終順位"} />
 
       {/* A4印刷ボタン */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
