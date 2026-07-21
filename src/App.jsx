@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   savePrediction,
   getPredictionByName,
@@ -46,9 +47,12 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v40";
+var APP_VERSION = "v41";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
+// 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
+var POD_COUNT = 6;
+var POD_MENU = ["北京ダック", "酢豚", "焼き餃子", "野菜炒め", "ピータン", "ザーサイ"];
 
 // ═══════════════════════════════════════════════════════════
 // Data
@@ -1488,6 +1492,17 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
   }, [rows]);
   function hensachi(v) { return scoreStats.std > 0 ? 50 + 10 * (v - scoreStats.mean) / scoreStats.std : 50; }
 
+  // 打ち上げPOD（三幸園ランク）の分割。画面パネルと印刷シートで共用。
+  var podView = useMemo(function () {
+    var rankOf = {}; rows.forEach(function (r, i) { rankOf[r.name] = i + 1; });
+    var attendees = rows.filter(function (r) { return !absentSet.has(r.name); });
+    var N = attendees.length, base = Math.floor(N / POD_COUNT), rem = N % POD_COUNT;
+    var sizes = []; for (var k = 0; k < POD_COUNT; k++) sizes.push(base + (k < rem ? 1 : 0));
+    var pots = [], idx = 0;
+    sizes.forEach(function (sz) { pots.push(attendees.slice(idx, idx + sz).map(function (r) { return { r: r, rank: rankOf[r.name] }; })); idx += sz; });
+    return { attendees: attendees, pots: pots, N: N, absN: rows.length - N };
+  }, [rows, absentSet]);
+
   // チーム別 投票状況集計
   var teamStats = useMemo(function () {
     var n = list.length;
@@ -1560,14 +1575,78 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
     <div className="fade-in">
       <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）") + "　/　得点の左「◯-◯位」＝まだ可能性のある最終順位"} />
 
+      {/* A4印刷ボタン */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <button onClick={function () { window.print(); }} style={{ fontSize: 12, fontWeight: 700, padding: "6px 14px", borderRadius: 7, cursor: "pointer", border: "1px solid " + $.border, background: "rgba(255,255,255,.05)", color: $.txt2 }}>🖨 A4印刷（全体順位＋三幸園ランク）</button>
+      </div>
+
+      {/* 印刷専用シート（A4タテ）。body直下にポータルし、@media print時のみ表示 */}
+      {createPortal(
+        <div className="print-sheet">
+          {(function () {
+            var half = Math.ceil(rows.length / 2);
+            var cols = [rows.slice(0, half), rows.slice(half)];
+            var head = (
+              <div style={{ display: "flex", gap: 4, fontSize: 8, color: "#888", borderBottom: "1px solid #bbb", paddingBottom: 1 }}>
+                <span style={{ width: 22, textAlign: "right" }}>#</span><span style={{ flex: 1 }}>名前</span><span style={{ width: 42, textAlign: "right" }}>得点</span><span style={{ width: 32, textAlign: "right" }}>偏差</span>
+              </div>
+            );
+            var rowLine = function (r, rank) {
+              return (
+                <div key={r.name} style={{ display: "flex", alignItems: "baseline", gap: 4, padding: "1.5px 0", borderBottom: "1px solid #eee", fontSize: 9.5 }}>
+                  <span style={{ width: 22, textAlign: "right", fontWeight: 700, color: "#555" }}>{rank}</span>
+                  <span style={{ flex: 1, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</span>
+                  <span style={{ width: 42, textAlign: "right", fontWeight: 700 }}>{r.score.total.toFixed(1)}</span>
+                  <span style={{ width: 32, textAlign: "right", color: "#777" }}>{hensachi(r.score.total).toFixed(1)}</span>
+                </div>
+              );
+            };
+            return (
+              <div style={{ fontFamily: "'Noto Sans JP',sans-serif", color: "#111" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: "2px solid #111", paddingBottom: 3, marginBottom: 6 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800 }}>Road to 三幸園 — FIFA W杯2026 予想ゲーム 最終結果</div>
+                  <div style={{ fontSize: 9, color: "#555" }}>参加者{rows.length}名</div>
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 800, margin: "0 0 3px" }}>■ 全体ランキング（得点・偏差値）</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px", marginBottom: 8 }}>
+                  <div>{head}{cols[0].map(function (r, i) { return rowLine(r, i + 1); })}</div>
+                  <div>{head}{cols[1].map(function (r, i) { return rowLine(r, half + i + 1); })}</div>
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 800, margin: "0 0 3px" }}>■ 三幸園ランク（打ち上げPOD{podView.absN > 0 ? "／欠席" + podView.absN + "名を除外" : ""}）</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                  {podView.pots.map(function (pod, pi) {
+                    return (
+                      <div key={pi} style={{ border: "1px solid #999", borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ fontSize: 9.5, fontWeight: 800, background: "#f0f0f0", padding: "2px 6px", borderBottom: "1px solid #ccc" }}>POD{pi + 1}　クラス{POD_MENU[pi]}<span style={{ float: "right", color: "#888", fontWeight: 400 }}>{pod.length}名</span></div>
+                        <div style={{ padding: "2px 6px" }}>
+                          {pod.map(function (o) {
+                            return (
+                              <div key={o.r.name} style={{ display: "flex", gap: 4, fontSize: 9, padding: "1px 0" }}>
+                                <span style={{ width: 26, textAlign: "right", color: "#777" }}>{o.rank}位</span>
+                                <span style={{ flex: 1, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.r.name}</span>
+                                <span style={{ color: "#555" }}>{o.r.score.total.toFixed(1)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+        </div>,
+        document.body
+      )}
+
       {/* 打ち上げ版ランキング（欠席者を除く）＋ POT1〜POT4 分け */}
       {(function () {
         var rankOf = {}; rows.forEach(function (r, i) { rankOf[r.name] = i + 1; }); // 三幸園ランキング(全体)での順位
         var attendees = rows.filter(function (r) { return !absentSet.has(r.name); });
         if (attendees.length < 2) return null;
-        var POTS = 6;
-        // POD1〜6のクラス名（中華メニュー・上→下）。表記は「クラス〇〇」。最下位はザーサイ。
-        var MENU = ["北京ダック", "酢豚", "焼き餃子", "野菜炒め", "ピータン", "ザーサイ"];
+        var POTS = POD_COUNT;
+        var MENU = POD_MENU;
         var N = attendees.length, base = Math.floor(N / POTS), rem = N % POTS;
         var sizes = []; for (var pk = 0; pk < POTS; pk++) sizes.push(base + (pk < rem ? 1 : 0)); // 上位POTから多めに
         var pots = [], idx = 0;
@@ -3425,6 +3504,15 @@ function Styles() {
       .lift:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.32);border-color:rgba(251,191,36,.45)}
       @keyframes growX{from{transform:scaleX(0)}to{transform:scaleX(1)}}
       .bar-grow{transform-origin:left center;animation:growX .55s cubic-bezier(.22,1,.36,1) both}
+
+      /* ─── 印刷（A4タテ）─── */
+      .print-sheet { display: none; }
+      @media print {
+        @page { size: A4 portrait; margin: 8mm; }
+        html, body { background: #fff !important; }
+        #root { display: none !important; }
+        .print-sheet { display: block !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      }
 
       /* ─── モバイル最適化 ─── */
       @media (max-width: 640px) {
