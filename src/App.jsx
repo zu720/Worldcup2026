@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v41";
+var APP_VERSION = "v42";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -2013,6 +2013,133 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
           <div style={{ fontSize: 11, color: $.dim, marginBottom: 12 }}>各メンバーの予想を一覧で比較。確定したグループは的中度で色分け。</div>
           <MatrixTab myName={myName_} tour={tour} list={list} />
         </div>
+      )}
+
+      {/* 傾斜精算（管理・合言葉でロック解除） */}
+      <SettlementPanel rows={rows} absentSet={absentSet} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 傾斜精算（打ち上げ会計）: 順位で傾斜をかけて割り勘。管理者のみ。
+// ═══════════════════════════════════════════════════════════
+function SettlementPanel({ rows, absentSet }) {
+  var ADMIN_PW = import.meta.env.VITE_ADMIN_PASSWORD || "sankoen2026";
+  var [unlocked, setUnlocked] = useState(false);
+  var [pw, setPw] = useState("");
+  var [open, setOpen] = useState(false);
+  var [total, setTotal] = useState(130000);
+  var [freeTop, setFreeTop] = useState(3);
+  var [cancelFee, setCancelFee] = useState(3000);
+  var [capMult, setCapMult] = useState(2.3);
+  var [steep, setSteep] = useState(1);
+  var [roundTo, setRoundTo] = useState(100);
+  var [subtractCancel, setSubtractCancel] = useState(true);
+
+  var calc = useMemo(function () {
+    try {
+      var ranked = rows.map(function (r, i) { return { name: r.name, rank: i + 1, absent: absentSet.has(r.name) }; });
+      var present = ranked.filter(function (p) { return !p.absent; });
+      var absentList = ranked.filter(function (p) { return p.absent; });
+      var absTotal = absentList.length * (cancelFee || 0);
+      var R = (total || 0) - (subtractCancel ? absTotal : 0); // 参加者で負担する総額
+      var payers = present.filter(function (p) { return p.rank > (freeTop || 0); }); // 上位freeTopは無料
+      var P = payers.length;
+      var E = present.length ? (total || 0) / present.length : 0; // 人数割の基準（参加者数）
+      var rd = function (v) { var u = roundTo || 1; return Math.max(0, Math.round(v / u) * u); };
+      var amountByName = {};
+      if (P > 0 && R > 0) {
+        var equalAmt = R / P;
+        var targetViri = Math.min((capMult || 0) * E, 2 * equalAmt); // ビリの上限（人数割×倍率 と 線形上限2×均等 の小さい方）
+        var M = equalAmt + Math.max(0, Math.min(1, steep)) * (targetViri - equalAmt);
+        var mMin = 2 * equalAmt - M;
+        // payers は rank昇順（best→worst）。j=0が最上位払い(軽い)、j=P-1がビリ(重い)。
+        var raw = payers.map(function (p, j) { var a = P === 1 ? equalAmt : (mMin + (M - mMin) * (j / (P - 1))); return { p: p, a: a }; });
+        var rounded = raw.map(function (x) { return { name: x.p.name, amt: rd(x.a) }; });
+        var sumR = rounded.reduce(function (a, b) { return a + b.amt; }, 0);
+        var residual = Math.round(R) - sumR; // 端数はビリに寄せる
+        if (rounded.length) rounded[rounded.length - 1].amt = Math.max(0, rounded[rounded.length - 1].amt + residual);
+        rounded.forEach(function (x) { amountByName[x.name] = x.amt; });
+      }
+      var lines = ranked.map(function (p) {
+        var kind, amt;
+        if (p.absent) { kind = "欠席(ｷｬﾝｾﾙ)"; amt = cancelFee || 0; }
+        else if (p.rank <= (freeTop || 0)) { kind = "無料(上位)"; amt = 0; }
+        else { kind = "傾斜割"; amt = amountByName[p.name] || 0; }
+        return { name: p.name, rank: p.rank, kind: kind, amt: amt, absent: p.absent };
+      });
+      var payerAmts = lines.filter(function (l) { return l.kind === "傾斜割"; }).map(function (l) { return l.amt; });
+      var viri = payerAmts.length ? payerAmts[payerAmts.length - 1] : 0;
+      var topPayer = payerAmts.length ? payerAmts[0] : 0;
+      var collected = lines.reduce(function (a, b) { return a + b.amt; }, 0);
+      return { lines: lines, absTotal: absTotal, R: R, E: E, P: P, viri: viri, topPayer: topPayer, collected: collected, presentN: present.length, absentN: absentList.length };
+    } catch (e) { return null; }
+  }, [rows, absentSet, total, freeTop, cancelFee, capMult, steep, roundTo, subtractCancel]);
+
+  var yen = function (v) { return "¥" + (v || 0).toLocaleString("ja-JP"); };
+  var numInput = function (label, val, setter, step, width) {
+    return (
+      <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10, color: $.dim }}>
+        {label}
+        <input type="number" value={val} step={step || 1} onChange={function (e) { setter(e.target.value === "" ? 0 : Number(e.target.value)); }}
+          style={{ width: width || 90, padding: "5px 8px", borderRadius: 6, background: "rgba(0,0,0,.3)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, fontWeight: 700 }} />
+      </label>
+    );
+  };
+
+  return (
+    <div style={{ marginTop: 26, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 10, border: "1px solid " + $.border }}>
+      <div onClick={function () { setOpen(!open); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: $.gold }}>🧮 傾斜精算（打ち上げ会計・管理）</div>
+        <span style={{ fontSize: 11, color: $.dim }}>{open ? "▲ 閉じる" : "▼ 開く"}</span>
+      </div>
+      {open && (
+        !unlocked ? (
+          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input type="password" value={pw} placeholder="合言葉" onChange={function (e) { setPw(e.target.value); }} onKeyDown={function (e) { if (e.key === "Enter" && pw === ADMIN_PW) setUnlocked(true); }}
+              style={{ width: 180, padding: "8px 12px", borderRadius: 8, border: "1px solid " + $.border, background: "rgba(0,0,0,.3)", color: $.txt, fontSize: 13 }} />
+            <button onClick={function () { if (pw === ADMIN_PW) setUnlocked(true); }} style={{ padding: "8px 18px", border: "none", borderRadius: 8, background: $.gold, color: "#000", fontWeight: 700, cursor: "pointer" }}>解除</button>
+          </div>
+        ) : !calc ? <div style={{ marginTop: 10, fontSize: 12, color: $.dim }}>計算できませんでした</div> : (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+              {numInput("総額(円)", total, setTotal, 1000, 110)}
+              {numInput("無料の上位人数", freeTop, setFreeTop, 1, 90)}
+              {numInput("欠席ｷｬﾝｾﾙ代(円)", cancelFee, setCancelFee, 500, 100)}
+              {numInput("ビリ上限(人数割×)", capMult, setCapMult, 0.1, 90)}
+              {numInput("端数丸め(円)", roundTo, setRoundTo, 50, 80)}
+              <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10, color: $.dim }}>
+                傾斜の強さ {Math.round(steep * 100)}%
+                <input type="range" min="0" max="1" step="0.05" value={steep} onChange={function (e) { setSteep(Number(e.target.value)); }} style={{ width: 130 }} />
+              </label>
+              <label style={{ fontSize: 11, color: $.txt2, display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                <input type="checkbox" checked={subtractCancel} onChange={function (e) { setSubtractCancel(e.target.checked); }} />
+                ｷｬﾝｾﾙ代を総額から差引く
+              </label>
+            </div>
+            <div style={{ fontSize: 11, color: $.txt2, marginBottom: 8, lineHeight: 1.7 }}>
+              人数割(参加{calc.presentN}名)＝<b>{yen(Math.round(calc.E))}</b>　/　参加者負担＝<b>{yen(Math.round(calc.R))}</b>（欠席{calc.absentN}名×{yen(cancelFee)}＝{yen(calc.absTotal)}）<br />
+              ビリ＝<b style={{ color: $.goldL }}>{yen(calc.viri)}</b>（人数割の{calc.E ? (calc.viri / calc.E).toFixed(2) : "-"}倍・上限{capMult}倍）　最上位払い＝{yen(calc.topPayer)}　/　<b>回収合計＝{yen(calc.collected)}</b>{calc.collected !== total ? <span style={{ color: $.redL }}>（総額と{yen(Math.abs(calc.collected - total))}差）</span> : <span style={{ color: $.pitchL }}>（総額一致）</span>}
+            </div>
+            <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid " + $.border, borderRadius: 8 }}>
+              <div style={{ display: "flex", fontSize: 9, color: $.dim, fontWeight: 700, padding: "4px 10px", borderBottom: "1px solid " + $.border, position: "sticky", top: 0, background: $.panel }}>
+                <span style={{ width: 34 }}>順位</span><span style={{ flex: 1 }}>名前</span><span style={{ width: 84 }}>区分</span><span style={{ width: 80, textAlign: "right" }}>金額</span>
+              </div>
+              {calc.lines.map(function (l) {
+                return (
+                  <div key={l.name} style={{ display: "flex", alignItems: "center", fontSize: 12, padding: "5px 10px", borderBottom: "1px solid rgba(255,255,255,.04)", opacity: l.absent ? .7 : 1 }}>
+                    <span style={{ width: 34, color: $.dim, fontFamily: fontH }}>{l.rank}</span>
+                    <span style={{ flex: 1, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.name}</span>
+                    <span style={{ width: 84, fontSize: 9, color: l.kind === "傾斜割" ? $.txt2 : l.absent ? $.redL : $.pitchL }}>{l.kind}</span>
+                    <span style={{ width: 80, textAlign: "right", fontFamily: fontH, fontSize: 14, color: l.amt === 0 ? $.dim : $.gold }}>{yen(l.amt)}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>※この端末だけの試算です（保存はされません）。傾斜を上げるとビリが重く上位が軽くなります。上限倍率でビリの最大額を制限。</div>
+          </div>
+        )
       )}
     </div>
   );
