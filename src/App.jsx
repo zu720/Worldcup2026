@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v50";
+var APP_VERSION = "v51";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -2193,7 +2193,7 @@ function SettlementPanel({ rows, absentSet, tour, setTour }) {
             {/* 三幸園ランク参加者数＋欠席者ごとのキャンセル代（個別設定） */}
             <div style={{ marginBottom: 10, padding: 8, borderRadius: 8, background: "rgba(0,0,0,.2)", border: "1px solid " + $.border }}>
               <div style={{ fontSize: 11, color: $.txt2, marginBottom: absentees.length ? 6 : 0, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
-                <span>三幸園ランク参加者（傾斜割の対象）＝<b style={{ color: $.gold }}>{calc.presentN}名</b>{absentees.length ? "　/　欠席 " + absentees.length + "名（各自のキャンセル代を入力・¥0で免除）" : ""}</span>
+                <span>三幸園ランク参加者（傾斜割の対象）＝<b style={{ color: $.gold }}>{calc.presentN}名</b>{absentees.length ? "　/　欠席 " + absentees.length + "名（名前クリックで免除↔既定額・金額は個別入力も可）" : ""}</span>
                 {absentees.length > 0 && <button onClick={function () { setFeeByName({}); }} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: "1px solid " + $.border, background: "transparent", color: $.dim, cursor: "pointer" }}>既定額({yen(cancelFee)})に戻す</button>}
               </div>
               {absentees.length > 0 && (
@@ -2201,12 +2201,13 @@ function SettlementPanel({ rows, absentSet, tour, setTour }) {
                   {absentees.map(function (nm) {
                     var v = feeOf(nm);
                     return (
-                      <label key={nm} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid " + (v > 0 ? $.gold + "66" : $.border), background: v > 0 ? "rgba(245,197,24,.08)" : "rgba(0,0,0,.25)" }}>
-                        <span style={{ color: v > 0 ? $.goldL : $.dim, whiteSpace: "nowrap" }}>{nm}</span>
+                      <div key={nm} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid " + (v > 0 ? $.gold + "66" : $.border), background: v > 0 ? "rgba(245,197,24,.08)" : "rgba(0,0,0,.25)" }}>
+                        <button title="クリックで免除(¥0)↔既定額" onClick={function () { setFeeByName(function (m) { var n = Object.assign({}, m); n[nm] = (feeOf(nm) > 0 ? 0 : (cancelFee || 0)); return n; }); }}
+                          style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 700, color: v > 0 ? $.goldL : $.dim, whiteSpace: "nowrap", textDecoration: v > 0 ? "none" : "line-through" }}>{nm}</button>
                         <span style={{ color: $.dim, fontSize: 11 }}>¥</span>
                         <input type="number" step="500" value={v} onChange={function (e) { var val = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value)); setFeeByName(function (m) { var n = Object.assign({}, m); n[nm] = val; return n; }); }}
                           style={{ width: 74, padding: "4px 6px", borderRadius: 5, background: "rgba(0,0,0,.35)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, fontWeight: 700 }} />
-                      </label>
+                      </div>
                     );
                   })}
                 </div>
