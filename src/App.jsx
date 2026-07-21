@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v42";
+var APP_VERSION = "v43";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -2036,13 +2036,17 @@ function SettlementPanel({ rows, absentSet }) {
   var [steep, setSteep] = useState(1);
   var [roundTo, setRoundTo] = useState(100);
   var [subtractCancel, setSubtractCancel] = useState(true);
+  var [feePayers, setFeePayers] = useState({}); // 欠席者のうちキャンセル代を払う人（name->bool、未設定はtrue）
+
+  var absentees = rows.filter(function (r) { return absentSet.has(r.name); }).map(function (r) { return r.name; });
+  var paysFee = function (name) { return feePayers[name] !== false; };
 
   var calc = useMemo(function () {
     try {
       var ranked = rows.map(function (r, i) { return { name: r.name, rank: i + 1, absent: absentSet.has(r.name) }; });
       var present = ranked.filter(function (p) { return !p.absent; });
       var absentList = ranked.filter(function (p) { return p.absent; });
-      var absTotal = absentList.length * (cancelFee || 0);
+      var absTotal = absentList.reduce(function (a, p) { return a + (paysFee(p.name) ? (cancelFee || 0) : 0); }, 0);
       var R = (total || 0) - (subtractCancel ? absTotal : 0); // 参加者で負担する総額
       var payers = present.filter(function (p) { return p.rank > (freeTop || 0); }); // 上位freeTopは無料
       var P = payers.length;
@@ -2064,7 +2068,7 @@ function SettlementPanel({ rows, absentSet }) {
       }
       var lines = ranked.map(function (p) {
         var kind, amt;
-        if (p.absent) { kind = "欠席(ｷｬﾝｾﾙ)"; amt = cancelFee || 0; }
+        if (p.absent) { var pf = paysFee(p.name); kind = pf ? "欠席(ｷｬﾝｾﾙ)" : "欠席(免除)"; amt = pf ? (cancelFee || 0) : 0; }
         else if (p.rank <= (freeTop || 0)) { kind = "無料(上位)"; amt = 0; }
         else { kind = "傾斜割"; amt = amountByName[p.name] || 0; }
         return { name: p.name, rank: p.rank, kind: kind, amt: amt, absent: p.absent };
@@ -2073,9 +2077,10 @@ function SettlementPanel({ rows, absentSet }) {
       var viri = payerAmts.length ? payerAmts[payerAmts.length - 1] : 0;
       var topPayer = payerAmts.length ? payerAmts[0] : 0;
       var collected = lines.reduce(function (a, b) { return a + b.amt; }, 0);
-      return { lines: lines, absTotal: absTotal, R: R, E: E, P: P, viri: viri, topPayer: topPayer, collected: collected, presentN: present.length, absentN: absentList.length };
+      var feeCount = absentList.filter(function (p) { return paysFee(p.name); }).length;
+      return { lines: lines, absTotal: absTotal, R: R, E: E, P: P, viri: viri, topPayer: topPayer, collected: collected, presentN: present.length, absentN: absentList.length, feeCount: feeCount };
     } catch (e) { return null; }
-  }, [rows, absentSet, total, freeTop, cancelFee, capMult, steep, roundTo, subtractCancel]);
+  }, [rows, absentSet, total, freeTop, cancelFee, capMult, steep, roundTo, subtractCancel, feePayers]);
 
   var yen = function (v) { return "¥" + (v || 0).toLocaleString("ja-JP"); };
   var numInput = function (label, val, setter, step, width) {
@@ -2118,8 +2123,26 @@ function SettlementPanel({ rows, absentSet }) {
                 ｷｬﾝｾﾙ代を総額から差引く
               </label>
             </div>
+
+            {/* 三幸園ランク参加者数＋キャンセル代を払う欠席者の選択 */}
+            <div style={{ marginBottom: 10, padding: 8, borderRadius: 8, background: "rgba(0,0,0,.2)", border: "1px solid " + $.border }}>
+              <div style={{ fontSize: 11, color: $.txt2, marginBottom: absentees.length ? 6 : 0 }}>三幸園ランク参加者（傾斜割の対象）＝<b style={{ color: $.gold }}>{calc.presentN}名</b>{absentees.length ? "　/　欠席 " + absentees.length + "名（下でキャンセル代を払う人を選択）" : ""}</div>
+              {absentees.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {absentees.map(function (nm) {
+                    var on = paysFee(nm);
+                    return (
+                      <button key={nm} onClick={function () { setFeePayers(function (m) { var n = Object.assign({}, m); n[nm] = !on; return n; }); }}
+                        style={{ fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 6, cursor: "pointer", border: "1px solid " + (on ? $.gold + "88" : $.border), background: on ? "rgba(245,197,24,.12)" : "rgba(0,0,0,.25)", color: on ? $.goldL : $.dim }}>
+                        {on ? "☑" : "☐"} {nm}{on ? "　" + yen(cancelFee) : "　免除"}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <div style={{ fontSize: 11, color: $.txt2, marginBottom: 8, lineHeight: 1.7 }}>
-              人数割(参加{calc.presentN}名)＝<b>{yen(Math.round(calc.E))}</b>　/　参加者負担＝<b>{yen(Math.round(calc.R))}</b>（欠席{calc.absentN}名×{yen(cancelFee)}＝{yen(calc.absTotal)}）<br />
+              人数割(参加{calc.presentN}名)＝<b>{yen(Math.round(calc.E))}</b>　/　参加者負担＝<b>{yen(Math.round(calc.R))}</b>（ｷｬﾝｾﾙ代 {calc.feeCount}名×{yen(cancelFee)}＝{yen(calc.absTotal)}）<br />
               ビリ＝<b style={{ color: $.goldL }}>{yen(calc.viri)}</b>（人数割の{calc.E ? (calc.viri / calc.E).toFixed(2) : "-"}倍・上限{capMult}倍）　最上位払い＝{yen(calc.topPayer)}　/　<b>回収合計＝{yen(calc.collected)}</b>{calc.collected !== total ? <span style={{ color: $.redL }}>（総額と{yen(Math.abs(calc.collected - total))}差）</span> : <span style={{ color: $.pitchL }}>（総額一致）</span>}
             </div>
             <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid " + $.border, borderRadius: 8 }}>
