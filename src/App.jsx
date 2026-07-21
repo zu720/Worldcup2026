@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v44";
+var APP_VERSION = "v45";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -2037,13 +2037,14 @@ function SettlementPanel({ rows, absentSet }) {
   var [roundTo, setRoundTo] = useState(100);
   var [subtractCancel, setSubtractCancel] = useState(true);
   var [feeByName, setFeeByName] = useState({}); // 欠席者ごとのキャンセル代（name->円、未設定は既定cancelFee）
+  var [slopeBasis, setSlopeBasis] = useState("rank"); // 傾斜の基準: "rank"(順位・等間隔) / "score"(点数・点差反映)
 
   var absentees = rows.filter(function (r) { return absentSet.has(r.name); }).map(function (r) { return r.name; });
   var feeOf = function (name) { return feeByName[name] != null ? feeByName[name] : (cancelFee || 0); };
 
   var calc = useMemo(function () {
     try {
-      var ranked = rows.map(function (r, i) { return { name: r.name, rank: i + 1, absent: absentSet.has(r.name) }; });
+      var ranked = rows.map(function (r, i) { return { name: r.name, rank: i + 1, absent: absentSet.has(r.name), score: (r.score && r.score.total) || 0 }; });
       var present = ranked.filter(function (p) { return !p.absent; });
       var absentList = ranked.filter(function (p) { return p.absent; });
       var absTotal = absentList.reduce(function (a, p) { return a + feeOf(p.name); }, 0);
@@ -2056,10 +2057,24 @@ function SettlementPanel({ rows, absentSet }) {
       if (P > 0 && R > 0) {
         var equalAmt = R / P;
         var targetViri = Math.min((capMult || 0) * E, 2 * equalAmt); // ビリの上限（人数割×倍率 と 線形上限2×均等 の小さい方）
-        var M = equalAmt + Math.max(0, Math.min(1, steep)) * (targetViri - equalAmt);
-        var mMin = 2 * equalAmt - M;
-        // payers は rank昇順（best→worst）。j=0が最上位払い(軽い)、j=P-1がビリ(重い)。
-        var raw = payers.map(function (p, j) { var a = P === 1 ? equalAmt : (mMin + (M - mMin) * (j / (P - 1))); return { p: p, a: a }; });
+        var Mtarget = equalAmt + Math.max(0, Math.min(1, steep)) * (targetViri - equalAmt); // ビリの目標額（上限内）
+        // payers は rank昇順（best→worst）。各人の重み sev∈[0,1]（0=最上位払い/軽い, 1=ビリ/重い）
+        // rank基準=等間隔 / score基準=点差に比例（点数が高いほど軽い）。
+        var sev;
+        if (slopeBasis === "score") {
+          var sc = payers.map(function (p) { return p.score; });
+          var hi = Math.max.apply(null, sc), lo = Math.min.apply(null, sc);
+          sev = payers.map(function (p) { return hi > lo ? (hi - p.score) / (hi - lo) : 0.5; });
+        } else {
+          sev = payers.map(function (p, j) { return P === 1 ? 0 : j / (P - 1); });
+        }
+        var meanS = sev.reduce(function (a, b) { return a + b; }, 0) / P;
+        var maxS = Math.max.apply(null, sev);
+        // amount = A + B*sev。sum=R（平均=equalAmt）を保ち、ビリ(最大sev)=Mtargetを目標に、最上位払いが負にならないようBを制限。
+        var B = 0;
+        if (maxS > meanS) { var Braw = (Mtarget - equalAmt) / (maxS - meanS); var Bcap = meanS > 0 ? equalAmt / meanS : Infinity; B = Math.min(Braw, Bcap); }
+        var A = equalAmt - B * meanS;
+        var raw = payers.map(function (p, j) { return { p: p, a: A + B * sev[j] }; });
         var rounded = raw.map(function (x) { return { name: x.p.name, amt: rd(x.a) }; });
         var sumR = rounded.reduce(function (a, b) { return a + b.amt; }, 0);
         var residual = Math.round(R) - sumR; // 端数はビリに寄せる
@@ -2080,7 +2095,7 @@ function SettlementPanel({ rows, absentSet }) {
       var feeCount = absentList.filter(function (p) { return feeOf(p.name) > 0; }).length;
       return { lines: lines, absTotal: absTotal, R: R, E: E, P: P, viri: viri, topPayer: topPayer, collected: collected, presentN: present.length, absentN: absentList.length, feeCount: feeCount };
     } catch (e) { return null; }
-  }, [rows, absentSet, total, freeTop, cancelFee, capMult, steep, roundTo, subtractCancel, feeByName]);
+  }, [rows, absentSet, total, freeTop, cancelFee, capMult, steep, roundTo, subtractCancel, feeByName, slopeBasis]);
 
   var yen = function (v) { return "¥" + (v || 0).toLocaleString("ja-JP"); };
   var numInput = function (label, val, setter, step, width) {
@@ -2117,6 +2132,15 @@ function SettlementPanel({ rows, absentSet }) {
               <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10, color: $.dim }}>
                 傾斜の強さ {Math.round(steep * 100)}%
                 <input type="range" min="0" max="1" step="0.05" value={steep} onChange={function (e) { setSteep(Number(e.target.value)); }} style={{ width: 130 }} />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10, color: $.dim }}>
+                傾斜の基準
+                <div style={{ display: "flex", gap: 0, border: "1px solid " + $.border, borderRadius: 6, overflow: "hidden" }}>
+                  {[["rank", "順位"], ["score", "点数"]].map(function (o) {
+                    var on = slopeBasis === o[0];
+                    return <button key={o[0]} onClick={function () { setSlopeBasis(o[0]); }} style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", border: "none", cursor: "pointer", background: on ? $.gold : "transparent", color: on ? "#000" : $.txt2 }}>{o[1]}</button>;
+                  })}
+                </div>
               </label>
               <label style={{ fontSize: 11, color: $.txt2, display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
                 <input type="checkbox" checked={subtractCancel} onChange={function (e) { setSubtractCancel(e.target.checked); }} />
@@ -2165,7 +2189,7 @@ function SettlementPanel({ rows, absentSet }) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>※この端末だけの試算です（保存はされません）。傾斜を上げるとビリが重く上位が軽くなります。上限倍率でビリの最大額を制限。</div>
+            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>※この端末だけの試算です（保存はされません）。傾斜を上げるとビリが重く上位が軽くなります。上限倍率でビリの最大額を制限。<b>傾斜の基準</b>＝「順位」は等間隔、「点数」は<b>点差</b>を反映（僅差なら金額差も小さく／大差なら大きく）。</div>
           </div>
         )
       )}
