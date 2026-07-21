@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v43";
+var APP_VERSION = "v44";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -2036,17 +2036,17 @@ function SettlementPanel({ rows, absentSet }) {
   var [steep, setSteep] = useState(1);
   var [roundTo, setRoundTo] = useState(100);
   var [subtractCancel, setSubtractCancel] = useState(true);
-  var [feePayers, setFeePayers] = useState({}); // 欠席者のうちキャンセル代を払う人（name->bool、未設定はtrue）
+  var [feeByName, setFeeByName] = useState({}); // 欠席者ごとのキャンセル代（name->円、未設定は既定cancelFee）
 
   var absentees = rows.filter(function (r) { return absentSet.has(r.name); }).map(function (r) { return r.name; });
-  var paysFee = function (name) { return feePayers[name] !== false; };
+  var feeOf = function (name) { return feeByName[name] != null ? feeByName[name] : (cancelFee || 0); };
 
   var calc = useMemo(function () {
     try {
       var ranked = rows.map(function (r, i) { return { name: r.name, rank: i + 1, absent: absentSet.has(r.name) }; });
       var present = ranked.filter(function (p) { return !p.absent; });
       var absentList = ranked.filter(function (p) { return p.absent; });
-      var absTotal = absentList.reduce(function (a, p) { return a + (paysFee(p.name) ? (cancelFee || 0) : 0); }, 0);
+      var absTotal = absentList.reduce(function (a, p) { return a + feeOf(p.name); }, 0);
       var R = (total || 0) - (subtractCancel ? absTotal : 0); // 参加者で負担する総額
       var payers = present.filter(function (p) { return p.rank > (freeTop || 0); }); // 上位freeTopは無料
       var P = payers.length;
@@ -2068,7 +2068,7 @@ function SettlementPanel({ rows, absentSet }) {
       }
       var lines = ranked.map(function (p) {
         var kind, amt;
-        if (p.absent) { var pf = paysFee(p.name); kind = pf ? "欠席(ｷｬﾝｾﾙ)" : "欠席(免除)"; amt = pf ? (cancelFee || 0) : 0; }
+        if (p.absent) { amt = feeOf(p.name); kind = amt > 0 ? "欠席(ｷｬﾝｾﾙ)" : "欠席(免除)"; }
         else if (p.rank <= (freeTop || 0)) { kind = "無料(上位)"; amt = 0; }
         else { kind = "傾斜割"; amt = amountByName[p.name] || 0; }
         return { name: p.name, rank: p.rank, kind: kind, amt: amt, absent: p.absent };
@@ -2077,10 +2077,10 @@ function SettlementPanel({ rows, absentSet }) {
       var viri = payerAmts.length ? payerAmts[payerAmts.length - 1] : 0;
       var topPayer = payerAmts.length ? payerAmts[0] : 0;
       var collected = lines.reduce(function (a, b) { return a + b.amt; }, 0);
-      var feeCount = absentList.filter(function (p) { return paysFee(p.name); }).length;
+      var feeCount = absentList.filter(function (p) { return feeOf(p.name) > 0; }).length;
       return { lines: lines, absTotal: absTotal, R: R, E: E, P: P, viri: viri, topPayer: topPayer, collected: collected, presentN: present.length, absentN: absentList.length, feeCount: feeCount };
     } catch (e) { return null; }
-  }, [rows, absentSet, total, freeTop, cancelFee, capMult, steep, roundTo, subtractCancel, feePayers]);
+  }, [rows, absentSet, total, freeTop, cancelFee, capMult, steep, roundTo, subtractCancel, feeByName]);
 
   var yen = function (v) { return "¥" + (v || 0).toLocaleString("ja-JP"); };
   var numInput = function (label, val, setter, step, width) {
@@ -2111,7 +2111,7 @@ function SettlementPanel({ rows, absentSet }) {
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
               {numInput("総額(円)", total, setTotal, 1000, 110)}
               {numInput("無料の上位人数", freeTop, setFreeTop, 1, 90)}
-              {numInput("欠席ｷｬﾝｾﾙ代(円)", cancelFee, setCancelFee, 500, 100)}
+              {numInput("既定ｷｬﾝｾﾙ代(円)", cancelFee, setCancelFee, 500, 100)}
               {numInput("ビリ上限(人数割×)", capMult, setCapMult, 0.1, 90)}
               {numInput("端数丸め(円)", roundTo, setRoundTo, 50, 80)}
               <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10, color: $.dim }}>
@@ -2124,18 +2124,23 @@ function SettlementPanel({ rows, absentSet }) {
               </label>
             </div>
 
-            {/* 三幸園ランク参加者数＋キャンセル代を払う欠席者の選択 */}
+            {/* 三幸園ランク参加者数＋欠席者ごとのキャンセル代（個別設定） */}
             <div style={{ marginBottom: 10, padding: 8, borderRadius: 8, background: "rgba(0,0,0,.2)", border: "1px solid " + $.border }}>
-              <div style={{ fontSize: 11, color: $.txt2, marginBottom: absentees.length ? 6 : 0 }}>三幸園ランク参加者（傾斜割の対象）＝<b style={{ color: $.gold }}>{calc.presentN}名</b>{absentees.length ? "　/　欠席 " + absentees.length + "名（下でキャンセル代を払う人を選択）" : ""}</div>
+              <div style={{ fontSize: 11, color: $.txt2, marginBottom: absentees.length ? 6 : 0, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                <span>三幸園ランク参加者（傾斜割の対象）＝<b style={{ color: $.gold }}>{calc.presentN}名</b>{absentees.length ? "　/　欠席 " + absentees.length + "名（各自のキャンセル代を入力・¥0で免除）" : ""}</span>
+                {absentees.length > 0 && <button onClick={function () { setFeeByName({}); }} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: "1px solid " + $.border, background: "transparent", color: $.dim, cursor: "pointer" }}>既定額({yen(cancelFee)})に戻す</button>}
+              </div>
               {absentees.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {absentees.map(function (nm) {
-                    var on = paysFee(nm);
+                    var v = feeOf(nm);
                     return (
-                      <button key={nm} onClick={function () { setFeePayers(function (m) { var n = Object.assign({}, m); n[nm] = !on; return n; }); }}
-                        style={{ fontSize: 11, fontWeight: 700, padding: "5px 10px", borderRadius: 6, cursor: "pointer", border: "1px solid " + (on ? $.gold + "88" : $.border), background: on ? "rgba(245,197,24,.12)" : "rgba(0,0,0,.25)", color: on ? $.goldL : $.dim }}>
-                        {on ? "☑" : "☐"} {nm}{on ? "　" + yen(cancelFee) : "　免除"}
-                      </button>
+                      <label key={nm} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "4px 8px", borderRadius: 6, border: "1px solid " + (v > 0 ? $.gold + "66" : $.border), background: v > 0 ? "rgba(245,197,24,.08)" : "rgba(0,0,0,.25)" }}>
+                        <span style={{ color: v > 0 ? $.goldL : $.dim, whiteSpace: "nowrap" }}>{nm}</span>
+                        <span style={{ color: $.dim, fontSize: 11 }}>¥</span>
+                        <input type="number" step="500" value={v} onChange={function (e) { var val = e.target.value === "" ? 0 : Math.max(0, Number(e.target.value)); setFeeByName(function (m) { var n = Object.assign({}, m); n[nm] = val; return n; }); }}
+                          style={{ width: 74, padding: "4px 6px", borderRadius: 5, background: "rgba(0,0,0,.35)", color: $.txt, border: "1px solid " + $.border, fontSize: 13, fontWeight: 700 }} />
+                      </label>
                     );
                   })}
                 </div>
