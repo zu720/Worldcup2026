@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v48";
+var APP_VERSION = "v50";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -2071,8 +2071,13 @@ function SettlementPanel({ rows, absentSet, tour, setTour }) {
         var sev;
         if (slopeBasis === "score") {
           var sc = payers.map(function (p) { return p.score; });
-          var hi = Math.max.apply(null, sc), lo = Math.min.apply(null, sc);
-          sev = payers.map(function (p) { return hi > lo ? (hi - p.score) / (hi - lo) : 0.5; });
+          var hi = Math.max.apply(null, sc);
+          // ビリ（最低点）は外れ値になりがちなので、スケール下限は「2番目に低い点」を使う。
+          // これで他の人の点差が素直に広がり、ビリ自身は上限まで振り切る（sev=1にクランプ）。
+          var loEx;
+          if (sc.length >= 2) { var asc = sc.slice().sort(function (a, b) { return a - b; }); loEx = asc[1]; }
+          else { loEx = Math.min.apply(null, sc); }
+          sev = payers.map(function (p) { return hi > loEx ? Math.max(0, Math.min(1, (hi - p.score) / (hi - loEx))) : 0.5; });
         } else {
           sev = payers.map(function (p, j) { return P === 1 ? 0 : j / (P - 1); });
         }
@@ -2085,8 +2090,8 @@ function SettlementPanel({ rows, absentSet, tour, setTour }) {
         var raw = payers.map(function (p, j) { return { p: p, a: A + B * sev[j] }; });
         var rounded = raw.map(function (x) { return { name: x.p.name, amt: rd(x.a) }; });
         var sumR = rounded.reduce(function (a, b) { return a + b.amt; }, 0);
-        var residual = Math.round(R) - sumR; // 端数はビリに寄せる
-        if (rounded.length) rounded[rounded.length - 1].amt = Math.max(0, rounded[rounded.length - 1].amt + residual);
+        var residual = Math.round(R) - sumR; // 端数は最も軽い人へ寄せる（ビリを上限額のまま綺麗に保つ）
+        if (rounded.length) { var ri = (rounded[0].amt + residual >= 0) ? 0 : rounded.length - 1; rounded[ri].amt = Math.max(0, rounded[ri].amt + residual); }
         rounded.forEach(function (x) { amountByName[x.name] = x.amt; });
       }
       var lines = ranked.map(function (p) {
@@ -2226,7 +2231,7 @@ function SettlementPanel({ rows, absentSet, tour, setTour }) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>傾斜を上げるとビリが重く上位が軽くなります。上限倍率でビリの最大額を制限。<b>傾斜の基準</b>＝「順位」は等間隔、「点数」は<b>点差</b>を反映（僅差なら金額差も小さく／大差なら大きく）。</div>
+            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>傾斜を上げるとビリが重く上位が軽くなります。上限倍率でビリの最大額を制限。<b>傾斜の基準</b>＝「順位」は等間隔、「点数」は<b>点差</b>を反映（僅差なら金額差も小さく／大差なら大きく）。点数モードは<b>ビリの点を外れ値として範囲計算から除外</b>し、他の人の傾斜が潰れないようにしています（ビリは上限額）。</div>
 
             {/* 確定して全員に公開 */}
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed " + $.border, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
