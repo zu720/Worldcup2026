@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v45";
+var APP_VERSION = "v46";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -919,7 +919,7 @@ export default function App() {
               adv={adv} ctx={ctx} score={score} tour={tour} liveStarted={liveStarted} fxByTeam={fxByTeam}
             />
           )}
-          {tab === "results" && <ResultsTab myName={nm} tour={tour} liveStarted={liveStarted} scoringKo={simScoringKo} simActive={simTouched} simKo={simKo} simAdv={simAdv} resetSim={resetSim} applySim={applySim} />}
+          {tab === "results" && <ResultsTab myName={nm} tour={tour} setTour={setTour} liveStarted={liveStarted} scoringKo={simScoringKo} simActive={simTouched} simKo={simKo} simAdv={simAdv} resetSim={resetSim} applySim={applySim} />}
           {tab === "live" && <LiveTab tour={tour} liveStarted={liveStarted} />}
           {adminOpen && <AdminPanel tour={tour} setTour={setTour} close={function () { setAdminOpen(false); }} />}
           {rulesOpen && (
@@ -1379,7 +1379,7 @@ function SaveBar({ saveStatus, savedAt, saveNow, glComplete, score }) {
 // ═══════════════════════════════════════════════════════════
 // Results Tab
 // ═══════════════════════════════════════════════════════════
-function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, simKo, simAdv, resetSim, applySim }) {
+function ResultsTab({ myName: myName_, tour, setTour, liveStarted, scoringKo, simActive, simKo, simAdv, resetSim, applySim }) {
   var [list, setList] = useState([]);
   var [loading, setLoading] = useState(true);
   var [err, setErr] = useState("");
@@ -1574,6 +1574,11 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
   return (
     <div className="fade-in">
       <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）") + "　/　得点の左「◯-◯位」＝まだ可能性のある最終順位"} />
+
+      {/* 確定精算（全員に公開・読み取り専用） */}
+      {tour && tour.ko && tour.ko.settlement && tour.ko.settlement.finalized && (
+        <SettlementPublic settlement={tour.ko.settlement} myName={myName_} />
+      )}
 
       {/* A4印刷ボタン */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
@@ -2016,7 +2021,7 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
       )}
 
       {/* 傾斜精算（管理・合言葉でロック解除） */}
-      <SettlementPanel rows={rows} absentSet={absentSet} />
+      <SettlementPanel rows={rows} absentSet={absentSet} tour={tour} setTour={setTour} />
     </div>
   );
 }
@@ -2024,11 +2029,14 @@ function ResultsTab({ myName: myName_, tour, liveStarted, scoringKo, simActive, 
 // ═══════════════════════════════════════════════════════════
 // 傾斜精算（打ち上げ会計）: 順位で傾斜をかけて割り勘。管理者のみ。
 // ═══════════════════════════════════════════════════════════
-function SettlementPanel({ rows, absentSet }) {
+function SettlementPanel({ rows, absentSet, tour, setTour }) {
   var ADMIN_PW = import.meta.env.VITE_ADMIN_PASSWORD || "sankoen2026";
   var [unlocked, setUnlocked] = useState(false);
   var [pw, setPw] = useState("");
   var [open, setOpen] = useState(false);
+  var [pubMsg, setPubMsg] = useState("");
+  var [pubBusy, setPubBusy] = useState(false);
+  var published = tour && tour.ko && tour.ko.settlement && tour.ko.settlement.finalized;
   var [total, setTotal] = useState(130000);
   var [freeTop, setFreeTop] = useState(3);
   var [cancelFee, setCancelFee] = useState(3000);
@@ -2107,6 +2115,35 @@ function SettlementPanel({ rows, absentSet }) {
       </label>
     );
   };
+
+  async function publish() {
+    if (!calc || pubBusy) return;
+    setPubBusy(true); setPubMsg("");
+    try {
+      var settlement = {
+        finalized: true, at: new Date().toISOString(), total: total, basis: slopeBasis,
+        lines: calc.lines, absTotal: calc.absTotal, R: calc.R, E: Math.round(calc.E),
+        viri: calc.viri, presentN: calc.presentN, feeCount: calc.feeCount, collected: calc.collected,
+      };
+      var newKo = Object.assign({}, (tour && tour.ko) || {}, { settlement: settlement });
+      await saveTournament({ ko: newKo });
+      setTour(function (t) { return Object.assign({}, t, { ko: newKo }); });
+      setPubMsg("✓ 確定して全員に公開しました");
+    } catch (e) { setPubMsg("✕ " + (e.message || e)); }
+    setPubBusy(false);
+  }
+  async function unpublish() {
+    if (pubBusy) return;
+    setPubBusy(true); setPubMsg("");
+    try {
+      var s = Object.assign({}, (tour && tour.ko && tour.ko.settlement) || {}, { finalized: false });
+      var newKo = Object.assign({}, (tour && tour.ko) || {}, { settlement: s });
+      await saveTournament({ ko: newKo });
+      setTour(function (t) { return Object.assign({}, t, { ko: newKo }); });
+      setPubMsg("公開を取り消しました");
+    } catch (e) { setPubMsg("✕ " + (e.message || e)); }
+    setPubBusy(false);
+  }
 
   return (
     <div style={{ marginTop: 26, padding: 12, background: "rgba(255,255,255,.03)", borderRadius: 10, border: "1px solid " + $.border }}>
@@ -2189,10 +2226,60 @@ function SettlementPanel({ rows, absentSet }) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>※この端末だけの試算です（保存はされません）。傾斜を上げるとビリが重く上位が軽くなります。上限倍率でビリの最大額を制限。<b>傾斜の基準</b>＝「順位」は等間隔、「点数」は<b>点差</b>を反映（僅差なら金額差も小さく／大差なら大きく）。</div>
+            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>傾斜を上げるとビリが重く上位が軽くなります。上限倍率でビリの最大額を制限。<b>傾斜の基準</b>＝「順位」は等間隔、「点数」は<b>点差</b>を反映（僅差なら金額差も小さく／大差なら大きく）。</div>
+
+            {/* 確定して全員に公開 */}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed " + $.border, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <button onClick={publish} disabled={pubBusy} style={{ padding: "9px 18px", border: "none", borderRadius: 8, background: $.gold, color: "#000", fontWeight: 800, cursor: pubBusy ? "wait" : "pointer", fontSize: 13 }}>✅ この内容で確定して全員に公開</button>
+              {published && <button onClick={unpublish} disabled={pubBusy} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid " + $.border, background: "transparent", color: $.txt2, cursor: "pointer", fontSize: 12 }}>🙈 公開を取り消す</button>}
+              {published && <span style={{ fontSize: 11, color: $.pitchL, fontWeight: 700 }}>公開中（{tour.ko.settlement.at ? new Date(tour.ko.settlement.at).toLocaleString("ja-JP") : ""}）</span>}
+              {pubMsg && <span style={{ fontSize: 12, color: pubMsg.startsWith("✓") ? $.pitchL : pubMsg.startsWith("✕") ? $.redL : $.dim, fontWeight: 700 }}>{pubMsg}</span>}
+            </div>
+            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>※「確定して公開」を押すと、この精算結果がDBに保存され、全員のランキング画面の上部に表示されます（再度押せば最新内容で上書き）。</div>
           </div>
         )
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 確定精算の全員向け表示（読み取り専用）
+// ═══════════════════════════════════════════════════════════
+function SettlementPublic({ settlement, myName }) {
+  var s = settlement || {};
+  var lines = s.lines || [];
+  var yen = function (v) { return "¥" + (v || 0).toLocaleString("ja-JP"); };
+  var mine = lines.filter(function (l) { return l.name === myName; })[0];
+  var kindColor = function (k) { return k === "傾斜割" ? $.gold : (k && k.indexOf("免除") >= 0) ? $.dim : k === "無料(上位)" ? $.pitchL : $.redL; };
+  return (
+    <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(245,197,24,.06)", border: "1px solid " + $.gold + "55" }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: $.gold, marginBottom: 2 }}>💴 打ち上げ精算（確定）</div>
+      <div style={{ fontSize: 10, color: $.dim, marginBottom: 8 }}>総額 {yen(s.total)}　/　傾斜基準：{s.basis === "score" ? "点数" : "順位"}{s.at ? "　/　確定 " + new Date(s.at).toLocaleString("ja-JP") : ""}</div>
+      {mine && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(245,197,24,.12)", border: "1px solid " + $.gold + "66", marginBottom: 10 }}>
+          <span style={{ fontSize: 12, color: $.txt2, fontWeight: 700 }}>あなた（{mine.name}）のお支払い</span>
+          <span style={{ fontFamily: fontH, fontSize: 26, color: $.gold, marginLeft: "auto", lineHeight: 1 }}>{yen(mine.amt)}</span>
+          <span style={{ fontSize: 10, color: $.dim }}>{mine.kind}</span>
+        </div>
+      )}
+      <div style={{ maxHeight: 340, overflowY: "auto", border: "1px solid " + $.border, borderRadius: 8 }}>
+        <div style={{ display: "flex", fontSize: 9, color: $.dim, fontWeight: 700, padding: "4px 10px", borderBottom: "1px solid " + $.border, position: "sticky", top: 0, background: $.panel }}>
+          <span style={{ width: 34 }}>順位</span><span style={{ flex: 1 }}>名前</span><span style={{ width: 84 }}>区分</span><span style={{ width: 80, textAlign: "right" }}>金額</span>
+        </div>
+        {lines.map(function (l) {
+          var isMe = l.name === myName;
+          return (
+            <div key={l.name} style={{ display: "flex", alignItems: "center", fontSize: 12, padding: "5px 10px", borderBottom: "1px solid rgba(255,255,255,.04)", background: isMe ? "rgba(245,197,24,.12)" : "transparent", opacity: l.absent ? .75 : 1 }}>
+              <span style={{ width: 34, color: $.dim, fontFamily: fontH }}>{l.rank}</span>
+              <span style={{ flex: 1, fontWeight: 700, color: isMe ? $.gold : $.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.name}{isMe ? "（あなた）" : ""}</span>
+              <span style={{ width: 84, fontSize: 9, color: kindColor(l.kind) }}>{l.kind}</span>
+              <span style={{ width: 80, textAlign: "right", fontFamily: fontH, fontSize: 14, color: l.amt === 0 ? $.dim : $.gold }}>{yen(l.amt)}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 10, color: $.dim, marginTop: 6 }}>回収合計 <b style={{ color: $.txt2 }}>{yen(s.collected)}</b>（総額 {yen(s.total)}）　/　参加{s.presentN}名・ｷｬﾝｾﾙ代{s.feeCount}名</div>
     </div>
   );
 }
@@ -2589,7 +2676,7 @@ function AdminPanel({ tour, setTour, close }) {
     setKoTouched(true);
     setKoL(function (prev) {
       try {
-        var n = { r32: (prev.r32 || []).slice(), r16: (prev.r16 || []).slice(), qf: (prev.qf || []).slice(), sf: (prev.sf || []).slice(), final: (prev.final || []).slice(), champ: prev.champ, third: prev.third, matches: prev.matches, teamCards: prev.teamCards, absent: prev.absent };
+        var n = { r32: (prev.r32 || []).slice(), r16: (prev.r16 || []).slice(), qf: (prev.qf || []).slice(), sf: (prev.sf || []).slice(), final: (prev.final || []).slice(), champ: prev.champ, third: prev.third, matches: prev.matches, teamCards: prev.teamCards, absent: prev.absent, settlement: prev.settlement };
         if (stage === "champ" || stage === "third") { n[stage] = n[stage] === tn ? null : tn; return n; }
         var idx = n[stage].indexOf(tn);
         if (idx >= 0) {
@@ -2664,8 +2751,9 @@ function AdminPanel({ tour, setTour, close }) {
       var mergedMatches = dedupeMatches(grpMatches.concat(koMatches));
       var newKo = Object.assign({}, ko, { final: (ko.sf || []).slice(), matches: mergedMatches });
       if (tour && tour.ko) { newKo.teamCards = tour.ko.teamCards; }
-      // 打ち上げ欠席者リストは常に最新(tour)を採用し、ブラケット保存で消えないようにする。
+      // 打ち上げ欠席者リスト・確定精算は常に最新(tour)を採用し、ブラケット保存で消えないようにする。
       if (tour && tour.ko && tour.ko.absent) newKo.absent = tour.ko.absent;
+      if (tour && tour.ko && tour.ko.settlement) newKo.settlement = tour.ko.settlement;
       await saveTournament({ phase: phase, vote_locked: voteLocked, ko: newKo });
       setTour(function (t) { return Object.assign({}, t, { phase: phase, vote_locked: voteLocked, ko: newKo }); });
       setKoTouched(false);
