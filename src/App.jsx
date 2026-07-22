@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v54";
+var APP_VERSION = "v55";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -2088,10 +2088,18 @@ function SettlementPanel({ rows, absentSet, tour, setTour }) {
         var B = 0;
         if (maxS > meanS) { var Braw = (Mtarget - equalAmt) / (maxS - meanS); var Bcap = meanS > 0 ? equalAmt / meanS : Infinity; B = Math.min(Braw, Bcap); }
         var A = equalAmt - B * meanS;
-        var raw = payers.map(function (p, j) { return { p: p, a: A + B * sev[j] }; });
-        var rounded = raw.map(function (x) { return { name: x.p.name, amt: rd(x.a) }; });
+        var amt = payers.map(function (p, j) { return A + B * sev[j]; });
+        // 点数割のみ: 「ビリから2番目 ＝ ビリ − 1500円」に固定。浮いた差額はビリ・2番目以外へ均等配分（合計維持）。
+        if (slopeBasis === "score" && P >= 3) {
+          var ns = Math.max(0, amt[P - 1] - 1500);
+          var freed = amt[P - 2] - ns;
+          amt[P - 2] = ns;
+          var per = freed / (P - 2);
+          for (var q = 0; q < P - 2; q++) amt[q] += per;
+        }
+        var rounded = payers.map(function (p, j) { return { name: p.name, amt: rd(amt[j]) }; });
         var sumR = rounded.reduce(function (a, b) { return a + b.amt; }, 0);
-        var residual = Math.round(R) - sumR; // 端数は最も軽い人へ寄せる（ビリを上限額のまま綺麗に保つ）
+        var residual = Math.round(R) - sumR; // 端数は最も軽い人へ寄せる（ビリ・2番目の金額は崩さない）
         if (rounded.length) { var ri = (rounded[0].amt + residual >= 0) ? 0 : rounded.length - 1; rounded[ri].amt = Math.max(0, rounded[ri].amt + residual); }
         rounded.forEach(function (x) { amountByName[x.name] = x.amt; });
       }
@@ -2233,7 +2241,7 @@ function SettlementPanel({ rows, absentSet, tour, setTour }) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>傾斜を上げるとビリが重く上位が軽くなります。上限倍率でビリの最大額を制限。<b>傾斜の基準</b>＝「順位」は等間隔、「点数」は<b>点差</b>を反映（僅差なら金額差も小さく／大差なら大きく）。点数モードは<b>ビリの点を外れ値として範囲計算から除外</b>し、他の人の傾斜が潰れないようにしています（ビリは上限額）。</div>
+            <div style={{ fontSize: 9, color: $.dim, marginTop: 6 }}>傾斜を上げるとビリが重く上位が軽くなります。上限倍率でビリの最大額を制限。<b>傾斜の基準</b>＝「順位」は等間隔、「点数」は<b>点差</b>を反映（僅差なら金額差も小さく／大差なら大きく）。点数モードは<b>ビリの点を外れ値として範囲計算から除外</b>し、他の人の傾斜が潰れないようにしています（ビリは上限額）。さらに点数モードでは<b>ビリから2番目＝ビリ−¥1,500</b>に固定（差額は他へ均等配分）。</div>
 
             {/* 確定して全員に公開 */}
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed " + $.border, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
