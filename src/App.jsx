@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v52";
+var APP_VERSION = "v53";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -2276,8 +2276,8 @@ function SettlementPublic({ settlement, myName }) {
           <div style={{ padding: "8px 12px", borderRadius: 8, background: "rgba(61,220,151,.10)", border: "1px solid " + $.pitchL + "55", marginBottom: 10, fontSize: 12, fontWeight: 700, color: $.pitchL }}>🎉 あなた（{mine.name}）は支払いなしです（{mine.kind}）</div>
         )
       )}
-      <div style={{ maxHeight: 340, overflowY: "auto", border: "1px solid " + $.border, borderRadius: 8 }}>
-        <div style={{ display: "flex", fontSize: 9, color: $.dim, fontWeight: 700, padding: "4px 10px", borderBottom: "1px solid " + $.border, position: "sticky", top: 0, background: $.panel }}>
+      <div style={{ border: "1px solid " + $.border, borderRadius: 8 }}>
+        <div style={{ display: "flex", fontSize: 9, color: $.dim, fontWeight: 700, padding: "4px 10px", borderBottom: "1px solid " + $.border }}>
           <span style={{ width: 34 }}>順位</span><span style={{ flex: 1 }}>名前</span><span style={{ width: 84 }}>区分</span><span style={{ width: 80, textAlign: "right" }}>金額</span>
         </div>
         {payLines.map(function (l) {
