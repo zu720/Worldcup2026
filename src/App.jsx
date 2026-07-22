@@ -47,7 +47,7 @@ var $ = {
 var font = "'Rajdhani','Noto Sans JP',sans-serif";
 var fontH = "'Bebas Neue','Rajdhani',sans-serif";
 // 画面右上に小さく表示。キャッシュで古い版を見ていないか確認用（更新のたびに上げる）。
-var APP_VERSION = "v53";
+var APP_VERSION = "v54";
 // 大会フェーズの手動指定（"" なら確定KOから自動）。pre/groups/r32/r16/qf/sf/final/done。
 var PHASE_OVERRIDE = "sf";
 // 打ち上げPOD（三幸園ランク）のクラス名。上→下。画面表示・印刷で共用。
@@ -1578,6 +1578,9 @@ function ResultsTab({ myName: myName_, tour, setTour, liveStarted, scoringKo, si
         <SettlementPublic settlement={tour.ko.settlement} myName={myName_} />
       )}
 
+      {/* 傾斜精算（管理・合言葉でロック解除）— 精算確定表示のすぐ下 */}
+      <SettlementPanel rows={rows} absentSet={absentSet} tour={tour} setTour={setTour} />
+
       <Sec icon="🏅" title="ランキング" sub={"参加者 " + rows.length + "名 — " + (hasSupabase ? "リアルタイム共有中" : "ローカル保存（端末内のみ）") + "　/　得点の左「◯-◯位」＝まだ可能性のある最終順位"} />
 
       {/* A4印刷ボタン */}
@@ -2020,8 +2023,6 @@ function ResultsTab({ myName: myName_, tour, setTour, liveStarted, scoringKo, si
         </div>
       )}
 
-      {/* 傾斜精算（管理・合言葉でロック解除） */}
-      <SettlementPanel rows={rows} absentSet={absentSet} tour={tour} setTour={setTour} />
     </div>
   );
 }
